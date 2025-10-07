@@ -87,6 +87,7 @@ export default function Almacenes() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [countryFilter, setCountryFilter] = useState('Todos');
+  const [airportCodeFilterState, setAirportCodeFilterState] = useState('Todos');
 
   useEffect(() => {
     loadWarehouses();
@@ -113,7 +114,7 @@ export default function Almacenes() {
       case 'warning':
         return { label: 'Alerta', color: 'bg-yellow-500 text-white' };
       case 'normal':
-        return { label: 'Cerrar', color: 'bg-green-500 text-white' };
+        return { label: 'Normal', color: 'bg-green-500 text-white' };
       default:
         return { label: 'Normal', color: 'bg-gray-500 text-white' };
     }
@@ -124,6 +125,24 @@ export default function Almacenes() {
     warning: warehouses.filter(w => w.status === 'warning').length,
     normal: warehouses.filter(w => w.status === 'normal').length
   };
+
+  // Filtrado de almacenes según los filtros seleccionados
+  const filteredWarehouses = warehouses.filter((w) => {
+    // Filtro por estado
+    const statusMatch =
+      statusFilter === 'Todos' ||
+      (statusFilter === 'Crítico' && w.status === 'critical') ||
+      (statusFilter === 'Alerta' && w.status === 'warning') ||
+      (statusFilter === 'Normal' && w.status === 'normal');
+
+    // Filtro por país
+    const countryMatch = countryFilter === 'Todos' || w.country === countryFilter;
+
+    // Filtro por código de aeropuerto
+    const airportCodeFilter = airportCodeFilterState === 'Todos' || w.airport_code === airportCodeFilterState;
+
+    return statusMatch && countryMatch && airportCodeFilter;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -137,38 +156,53 @@ export default function Almacenes() {
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
               <Filter className="w-5 h-5 text-gray-600" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-              >
-                <option>Todos</option>
-                <option>Crítico</option>
-                <option>Alerta</option>
-                <option>Normal</option>
-              </select>
 
-              <select
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-              >
-                <option>Todos</option>
-                <option>LIM</option>
-                <option>EZE</option>
-                <option>ORD</option>
-              </select>
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500 mb-1">Estado</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
+                >
+                  <option>Todos</option>
+                  <option>Crítico</option>
+                  <option>Alerta</option>
+                  <option>Normal</option>
+                </select>
+              </div>
 
-              <select
-                value={countryFilter}
-                onChange={(e) => setCountryFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-              >
-                <option>Todos</option>
-                <option>Perú</option>
-                <option>Argentina</option>
-                <option>USA</option>
-                <option>Colombia</option>
-                <option>España</option>
-              </select>
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500 mb-1">Código aeropuerto</label>
+                <select
+                  value={airportCodeFilterState}
+                  onChange={(e) => setAirportCodeFilterState(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
+                >
+                  <option>Todos</option>
+                  <option>LIM</option>
+                  <option>EZE</option>
+                  <option>ORD</option>
+                  <option>TBP</option>
+                  <option>BOG</option>
+                  <option>BCN</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500 mb-1">País</label>
+                <select
+                  value={countryFilter}
+                  onChange={(e) => setCountryFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
+                >
+                  <option>Todos</option>
+                  <option>Perú</option>
+                  <option>Argentina</option>
+                  <option>USA</option>
+                  <option>Colombia</option>
+                  <option>España</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -186,7 +220,7 @@ export default function Almacenes() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-          {warehouses.map((warehouse) => {
+          {filteredWarehouses.map((warehouse) => {
             const percentage = getCapacityPercentage(warehouse.current_capacity, warehouse.max_capacity);
             const statusBadge = getStatusBadge(warehouse.status);
 
