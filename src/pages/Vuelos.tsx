@@ -71,6 +71,8 @@ export default function Vuelos() {
   const [flights, setFlights] = useState<Flight[]>([]);
   const [showNewFlightModal, setShowNewFlightModal] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('Todos');
+  const [destinationFilter, setDestinationFilter] = useState<string>('Todos');
 
   const [newFlight, setNewFlight] = useState({
     origin: '',
@@ -156,10 +158,23 @@ export default function Vuelos() {
     return `${days}d ${hours.toString().padStart(2, '0')}h`;
   };
 
+  // Filtrar vuelos
+  const filteredFlights = flights.filter(flight => {
+    const matchesStatus = statusFilter === 'Todos' || 
+      (statusFilter === 'En Tránsito' && flight.status === 'in_transit') ||
+      (statusFilter === 'Listo' && flight.status === 'ready') ||
+      (statusFilter === 'En Proceso' && flight.status === 'in_progress');
+    
+    const matchesDestination = destinationFilter === 'Todos' || 
+      flight.destination === destinationFilter;
+    
+    return matchesStatus && matchesDestination;
+  });
+
   const statusCounts = {
-    active: flights.filter(f => f.status === 'in_transit' || f.status === 'in_progress').length,
-    in_transit: flights.filter(f => f.status === 'in_transit').length,
-    ready: flights.filter(f => f.status === 'ready').length
+    active: filteredFlights.filter(f => f.status === 'in_transit' || f.status === 'in_progress').length,
+    in_transit: filteredFlights.filter(f => f.status === 'in_transit').length,
+    ready: filteredFlights.filter(f => f.status === 'ready').length
   };
 
   return (
@@ -173,19 +188,35 @@ export default function Vuelos() {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
-              <select className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]">
-                <option>Todos</option>
-                <option>En Tránsito</option>
-                <option>Listo</option>
-                <option>En Proceso</option>
-              </select>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-700">Estado</label>
+                <select 
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
+                >
+                  <option>Todos</option>
+                  <option>En Tránsito</option>
+                  <option>Listo</option>
+                  <option>En Proceso</option>
+                </select>
+              </div>
 
-              <select className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]">
-                <option>Todos</option>
-                <option>Lima</option>
-                <option>Bruselas</option>
-                <option>Madrid</option>
-              </select>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-700">Destino</label>
+                <select 
+                  value={destinationFilter}
+                  onChange={(e) => setDestinationFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
+                >
+                  <option>Todos</option>
+                  <option>Lima</option>
+                  <option>Bruselas</option>
+                  <option>Madrid</option>
+                  <option>Santiago</option>
+                  <option>Nueva York</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -216,7 +247,7 @@ export default function Vuelos() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {flights.map((flight) => (
+                {filteredFlights.map((flight) => (
                   <tr
                     key={flight.id}
                     onClick={() => setSelectedFlight(flight)}
@@ -333,17 +364,21 @@ export default function Vuelos() {
                 <svg viewBox="0 0 300 200" className="w-full h-full">
                   <rect width="300" height="200" fill="#e5e7eb" />
 
-                  <circle cx="50" cy="150" r="8" fill="#003366" />
-                  <path d="M 50 150 L 44 144 L 50 138 L 56 144 Z" fill="#003366" />
+                  {/* Origen - Punto simple */}
+                  <circle cx="50" cy="150" r="5" fill="#000000" />
 
-                  <circle cx="250" cy="50" r="8" fill="#003366" />
-                  <path d="M 250 50 L 244 44 L 250 38 L 256 44 Z" fill="#003366" />
+                  {/* Destino - Punto simple */}
+                  <circle cx="250" cy="50" r="5" fill="#000000" />
 
-                  <line x1="50" y1="150" x2="250" y2="50" stroke="#0066FF" strokeWidth="2" strokeDasharray="5,5" />
+                  {/* Línea punteada de ruta */}
+                  <line x1="50" y1="150" x2="250" y2="50" stroke="#000000" strokeWidth="2" strokeDasharray="5,5" />
 
+                  {/* Avión usando el SVG original */}
                   <g transform={`translate(${50 + (250-50) * selectedFlight.progress_percentage / 100}, ${150 + (50-150) * selectedFlight.progress_percentage / 100})`}>
-                    <path d="M 0 -8 L 8 0 L 0 8 L -6 0 Z" fill="#FF6600" />
-                    <circle cx="0" cy="0" r="3" fill="white" />
+                    <g transform="translate(-12, -16) rotate(11) scale(1.8)">
+                      <path d="M 12.382 5.304 L 10.096 7.59 l .006 .02 L 11.838 14 a .908 .908 0 0 1 -.211 .794 l -.573 .573 a .339 .339 0 0 1 -.566 -.08 l -2.348 -4.25 l -.745 -.746 l -1.97 1.97 a 3.311 3.311 0 0 1 -.75 .504 l .44 1.447 a .875 .875 0 0 1 -.199 .79 l -.175 .176 a .477 .477 0 0 1 -.672 0 l -1.04 -1.039 l -.018 -.02 l -.788 -.786 l -.02 -.02 l -1.038 -1.039 a .477 .477 0 0 1 0 -.672 l .176 -.176 a .875 .875 0 0 1 .79 -.197 l 1.447 .438 a 3.322 3.322 0 0 1 .504 -.75 l 1.97 -1.97 l -.746 -.744 l -4.25 -2.348 a .339 .339 0 0 1 -.08 -.566 l .573 -.573 a .909 .909 0 0 1 .794 -.211 l 6.39 1.736 l .02 .006 l 2.286 -2.286 c .37 -.372 1.621 -1.02 1.993 -.65 c .37 .372 -.279 1.622 -.65 1.993 z" 
+                            fill="#000000"/>
+                    </g>
                   </g>
                 </svg>
                 <p className="text-xs text-gray-600 mt-2 text-center">
