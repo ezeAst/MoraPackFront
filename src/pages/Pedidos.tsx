@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Package, Clock, DollarSign } from 'lucide-react';
+import Papa from 'papaparse'; // Asegúrate de instalar papaparse: npm install papaparse
 import type { Order, Client, Route } from '../types';
 
 const MOCK_CLIENTS: Client[] = [
@@ -115,6 +116,45 @@ export default function Pedidos() {
     alert('Pedido registrado exitosamente');
   };
 
+  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const newOrders: Order[] = [];
+        for (const row of results.data as any[]) {
+          if (
+            row.order_code &&
+            row.client_id &&
+            row.product_quantity &&
+            row.destination_city &&
+            row.delivery_date
+          ) {
+            newOrders.push({
+              id: String(orderIdCounter++),
+              order_code: row.order_code,
+              client_id: row.client_id,
+              product_quantity: parseInt(row.product_quantity),
+              destination_city: row.destination_city,
+              delivery_date: row.delivery_date,
+              status: row.status || 'processing',
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+        MOCK_ORDERS.unshift(...newOrders);
+        loadOrders();
+        alert(`Se han registrado ${newOrders.length} pedidos desde el archivo CSV`);
+      },
+      error: () => {
+        alert('Error al procesar el archivo CSV');
+      },
+    });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'processing': return 'bg-blue-100 text-blue-800';
@@ -201,23 +241,6 @@ export default function Pedidos() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha entrega</label>
-                <input
-                  type="date"
-                  value={formData.deliveryDate}
-                  onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
-                />
-              </div>
-
-              <button
-                onClick={handleCalculateRoute}
-                className="w-full px-6 py-3 bg-[#0066FF] text-white rounded-lg hover:bg-[#0052cc] font-medium"
-              >
-                Calcular ruta óptima
-              </button>
-
               <button
                 onClick={handleRegisterOrder}
                 className="w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium"
@@ -273,6 +296,30 @@ export default function Pedidos() {
                 </div>
               </div>
             )}
+
+            {/* Card para carga masiva de pedidos */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 mt-6">
+              <div className="flex items-center gap-3 mb-6">
+                <Package className="w-6 h-6 text-[#0066FF]" />
+                <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV)</h2>
+              </div>
+              <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col items-center justify-center bg-blue-50">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCSVUpload}
+                  className="mb-4"
+                />
+                <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV con los pedidos</span>
+                <button
+                  className="px-6 py-3 bg-[#0066FF] text-white rounded-lg hover:bg-[#0052cc] font-medium"
+                  onClick={() => alert('Selecciona un archivo CSV para cargar pedidos')}
+                  disabled
+                >
+                  Cargar pedidos masivos
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
