@@ -1,7 +1,87 @@
 import { useState, useEffect } from 'react';
-import { Warehouse as WarehouseIcon, Filter } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import {Filter } from 'lucide-react';
 import type { Warehouse } from '../types';
+
+const SAMPLE_WAREHOUSES: Warehouse[] = [
+  {
+    id: '1',
+    name: 'Aeropuerto de Lima',
+    airport_code: 'LIM',
+    city: 'Lima',
+    country: 'Perú',
+    current_capacity: 500,
+    max_capacity: 700,
+    packages_incoming: 31,
+    packages_assigned_percentage: 25,
+    status: 'warning',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '2',
+    name: 'Aeropuerto de Buenos Aires',
+    airport_code: 'EZE',
+    city: 'Buenos Aires',
+    country: 'Argentina',
+    current_capacity: 650,
+    max_capacity: 700,
+    packages_incoming: 31,
+    packages_assigned_percentage: 38,
+    status: 'critical',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '3',
+    name: 'Aeropuerto de Chicago',
+    airport_code: 'ORD',
+    city: 'Chicago',
+    country: 'USA',
+    current_capacity: 350,
+    max_capacity: 800,
+    packages_incoming: 35,
+    packages_assigned_percentage: 20,
+    status: 'normal',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '4',
+    name: 'Aeropuerto de Tumbes',
+    airport_code: 'TBP',
+    city: 'Tumbes',
+    country: 'Perú',
+    current_capacity: 420,
+    max_capacity: 600,
+    packages_incoming: 21,
+    packages_assigned_percentage: 15,
+    status: 'warning',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '5',
+    name: 'Aeropuerto de Bogotá',
+    airport_code: 'BOG',
+    city: 'Bogotá',
+    country: 'Colombia',
+    current_capacity: 580,
+    max_capacity: 650,
+    packages_incoming: 31,
+    packages_assigned_percentage: 42,
+    status: 'critical',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '6',
+    name: 'Aeropuerto de Barcelona',
+    airport_code: 'BCN',
+    city: 'Barcelona',
+    country: 'España',
+    current_capacity: 630,
+    max_capacity: 700,
+    packages_incoming: 18,
+    packages_assigned_percentage: 55,
+    status: 'critical',
+    created_at: new Date().toISOString()
+  }
+];
 
 export default function Almacenes() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -12,97 +92,8 @@ export default function Almacenes() {
     loadWarehouses();
   }, []);
 
-  const loadWarehouses = async () => {
-    const { data, error } = await supabase
-      .from('warehouses')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (data) {
-      setWarehouses(data);
-    } else {
-      const sampleWarehouses: Warehouse[] = [
-        {
-          id: '1',
-          name: 'Aeropuerto de Lima',
-          airport_code: 'LIM',
-          city: 'Lima',
-          country: 'Perú',
-          current_capacity: 500,
-          max_capacity: 700,
-          packages_incoming: 31,
-          packages_assigned_percentage: 25,
-          status: 'warning',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          name: 'Aeropuerto de Buenos Aires',
-          airport_code: 'EZE',
-          city: 'Buenos Aires',
-          country: 'Argentina',
-          current_capacity: 650,
-          max_capacity: 700,
-          packages_incoming: 31,
-          packages_assigned_percentage: 38,
-          status: 'critical',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '3',
-          name: 'Aeropuerto de Chicago',
-          airport_code: 'ORD',
-          city: 'Chicago',
-          country: 'USA',
-          current_capacity: 350,
-          max_capacity: 800,
-          packages_incoming: 35,
-          packages_assigned_percentage: 20,
-          status: 'normal',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '4',
-          name: 'Aeropuerto de Tumbes',
-          airport_code: 'TBP',
-          city: 'Tumbes',
-          country: 'Perú',
-          current_capacity: 420,
-          max_capacity: 600,
-          packages_incoming: 21,
-          packages_assigned_percentage: 15,
-          status: 'warning',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '5',
-          name: 'Aeropuerto de Bogotá',
-          airport_code: 'BOG',
-          city: 'Bogotá',
-          country: 'Colombia',
-          current_capacity: 580,
-          max_capacity: 650,
-          packages_incoming: 31,
-          packages_assigned_percentage: 42,
-          status: 'critical',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '6',
-          name: 'Aeropuerto de Barcelona',
-          airport_code: 'BCN',
-          city: 'Barcelona',
-          country: 'España',
-          current_capacity: 630,
-          max_capacity: 700,
-          packages_incoming: 18,
-          packages_assigned_percentage: 55,
-          status: 'critical',
-          created_at: new Date().toISOString()
-        }
-      ];
-      setWarehouses(sampleWarehouses);
-    }
+  const loadWarehouses = () => {
+    setWarehouses(SAMPLE_WAREHOUSES);
   };
 
   const getCapacityPercentage = (current: number, max: number) => {

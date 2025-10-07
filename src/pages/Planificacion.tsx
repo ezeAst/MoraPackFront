@@ -1,4 +1,4 @@
-import { Calendar, TrendingUp } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 
 export default function Planificacion() {
   return (

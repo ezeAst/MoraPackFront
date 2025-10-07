@@ -1,7 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Package, Search, Clock, DollarSign } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { Package, Clock, DollarSign } from 'lucide-react';
 import type { Order, Client, Route } from '../types';
+
+const MOCK_CLIENTS: Client[] = [
+  { id: '1', first_name: 'Juan', last_name: 'Pérez', birth_date: '1990-01-01', email: 'juan@example.com', phone: '123456789', created_at: '2025-10-01T09:00:00Z' },
+  { id: '2', first_name: 'Ana', last_name: 'García', birth_date: '1985-05-12', email: 'ana@example.com', phone: '987654321', created_at: '2025-10-01T09:05:00Z' },
+  { id: '3', first_name: 'Luis', last_name: 'Martínez', birth_date: '1992-08-20', email: 'luis@example.com', phone: '555555555', created_at: '2025-10-01T09:10:00Z' }
+];
+
+const MOCK_ORDERS: Order[] = [
+  { id: '101', order_code: 'MPE-001', client_id: '1', product_quantity: 10, destination_city: 'Madrid', delivery_date: '2025-10-10', status: 'processing', created_at: '2025-10-01T10:00:00Z' },
+  { id: '102', order_code: 'MPE-002', client_id: '2', product_quantity: 5, destination_city: 'Bogotá', delivery_date: '2025-10-12', status: 'completed', created_at: '2025-10-02T11:00:00Z' }
+];
+
+let orderIdCounter = 103;
+let clientIdCounter = 4;
 
 export default function Pedidos() {
   const [showClientSearch, setShowClientSearch] = useState(false);
@@ -30,44 +43,32 @@ export default function Pedidos() {
     loadOrders();
   }, []);
 
-  const loadOrders = async () => {
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    if (data) setOrders(data);
+  const loadOrders = () => {
+    setOrders([...MOCK_ORDERS].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5));
   };
 
-  const searchClients = async () => {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .ilike('first_name', `%${searchTerm}%`)
-      .limit(12);
-
-    if (data) setClients(data);
+  const searchClients = () => {
+    const filtered = MOCK_CLIENTS.filter(c =>
+      c.first_name.toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 12);
+    setClients(filtered);
   };
 
-  const handleRegisterClient = async () => {
-    const { data, error } = await supabase
-      .from('clients')
-      .insert([{
-        first_name: newClient.firstName,
-        last_name: newClient.lastName,
-        birth_date: newClient.birthDate,
-        email: newClient.email,
-        phone: newClient.phone
-      }])
-      .select()
-      .maybeSingle();
-
-    if (data) {
-      setSelectedClient(data);
-      setShowNewClientModal(false);
-      setNewClient({ firstName: '', lastName: '', birthDate: '', email: '', phone: '' });
-    }
+  const handleRegisterClient = () => {
+    const newId = String(clientIdCounter++);
+    const client: Client = {
+      id: newId,
+      first_name: newClient.firstName,
+      last_name: newClient.lastName,
+      birth_date: newClient.birthDate,
+      email: newClient.email,
+      phone: newClient.phone,
+      created_at: new Date().toISOString()
+    };
+    MOCK_CLIENTS.push(client);
+    setSelectedClient(client);
+    setShowNewClientModal(false);
+    setNewClient({ firstName: '', lastName: '', birthDate: '', email: '', phone: '' });
   };
 
   const handleCalculateRoute = () => {
@@ -88,43 +89,30 @@ export default function Pedidos() {
     });
   };
 
-  const handleRegisterOrder = async () => {
+  const handleRegisterOrder = () => {
     if (!selectedClient || !formData.productQuantity || !formData.destinationCity || !formData.deliveryDate) {
       alert('Por favor completa todos los campos');
       return;
     }
 
     const orderCode = `MPE-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+    const newOrder: Order = {
+      id: String(orderIdCounter++),
+      order_code: orderCode,
+      client_id: selectedClient.id,
+      product_quantity: parseInt(formData.productQuantity),
+      destination_city: formData.destinationCity,
+      delivery_date: formData.deliveryDate,
+      status: 'processing',
+      created_at: new Date().toISOString()
+    };
+    MOCK_ORDERS.unshift(newOrder);
 
-    const { data, error } = await supabase
-      .from('orders')
-      .insert([{
-        order_code: orderCode,
-        client_id: selectedClient.id,
-        product_quantity: parseInt(formData.productQuantity),
-        destination_city: formData.destinationCity,
-        delivery_date: formData.deliveryDate,
-        status: 'processing'
-      }])
-      .select()
-      .maybeSingle();
-
-    if (data && calculatedRoute) {
-      await supabase
-        .from('routes')
-        .insert([{
-          order_id: data.id,
-          route_path: calculatedRoute.route_path,
-          estimated_time_days: calculatedRoute.estimated_time_days,
-          estimated_cost: calculatedRoute.estimated_cost
-        }]);
-
-      setFormData({ productQuantity: '', destinationCity: '', deliveryDate: '' });
-      setSelectedClient(null);
-      setCalculatedRoute(null);
-      loadOrders();
-      alert('Pedido registrado exitosamente');
-    }
+    setFormData({ productQuantity: '', destinationCity: '', deliveryDate: '' });
+    setSelectedClient(null);
+    setCalculatedRoute(null);
+    loadOrders();
+    alert('Pedido registrado exitosamente');
   };
 
   const getStatusColor = (status: string) => {
