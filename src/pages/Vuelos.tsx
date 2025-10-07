@@ -1,7 +1,71 @@
 import { useState, useEffect } from 'react';
 import { Plane, Download } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import type { Flight } from '../types';
+
+const SAMPLE_FLIGHTS: Flight[] = [
+  {
+    id: '1',
+    flight_code: 'VUELO-001',
+    origin: 'Lima',
+    origin_code: 'PER',
+    destination: 'Bruselas',
+    destination_code: 'BEL',
+    current_packages: 120,
+    max_capacity: 250,
+    departure_time: '2025-08-26T08:00:00',
+    arrival_time: '2025-08-26T16:00:00',
+    status: 'in_transit',
+    progress_percentage: 65,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '2',
+    flight_code: 'VUELO-002',
+    origin: 'Bruselas',
+    origin_code: 'BEL',
+    destination: 'Madrid',
+    destination_code: 'ESP',
+    current_packages: 180,
+    max_capacity: 300,
+    departure_time: '2025-08-26T08:00:00',
+    arrival_time: '2025-08-26T10:00:00',
+    status: 'ready',
+    progress_percentage: 100,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '3',
+    flight_code: 'VUELO-003',
+    origin: 'Santiago',
+    origin_code: 'CHI',
+    destination: 'Lima',
+    destination_code: 'PER',
+    current_packages: 260,
+    max_capacity: 400,
+    departure_time: '2025-08-26T08:00:00',
+    arrival_time: '2025-08-26T12:00:00',
+    status: 'in_transit',
+    progress_percentage: 40,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '4',
+    flight_code: 'VUELO-004',
+    origin: 'Nueva York',
+    origin_code: 'USA',
+    destination: 'Lima',
+    destination_code: 'PER',
+    current_packages: 200,
+    max_capacity: 280,
+    departure_time: '2025-08-27T09:00:00',
+    arrival_time: '2025-08-27T18:00:00',
+    status: 'in_progress',
+    progress_percentage: 0,
+    created_at: new Date().toISOString()
+  }
+];
+
+let flightIdCounter = 5;
 
 export default function Vuelos() {
   const [flights, setFlights] = useState<Flight[]>([]);
@@ -21,114 +85,38 @@ export default function Vuelos() {
     loadFlights();
   }, []);
 
-  const loadFlights = async () => {
-    const { data, error } = await supabase
-      .from('flights')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (data && data.length > 0) {
-      setFlights(data);
-    } else {
-      const sampleFlights: Flight[] = [
-        {
-          id: '1',
-          flight_code: 'VUELO-001',
-          origin: 'Lima',
-          origin_code: 'PER',
-          destination: 'Bruselas',
-          destination_code: 'BEL',
-          current_packages: 120,
-          max_capacity: 250,
-          departure_time: '2025-08-26T08:00:00',
-          arrival_time: '2025-08-26T16:00:00',
-          status: 'in_transit',
-          progress_percentage: 65,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          flight_code: 'VUELO-002',
-          origin: 'Bruselas',
-          origin_code: 'BEL',
-          destination: 'Madrid',
-          destination_code: 'ESP',
-          current_packages: 180,
-          max_capacity: 300,
-          departure_time: '2025-08-26T08:00:00',
-          arrival_time: '2025-08-26T10:00:00',
-          status: 'ready',
-          progress_percentage: 100,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '3',
-          flight_code: 'VUELO-003',
-          origin: 'Santiago',
-          origin_code: 'CHI',
-          destination: 'Lima',
-          destination_code: 'PER',
-          current_packages: 260,
-          max_capacity: 400,
-          departure_time: '2025-08-26T08:00:00',
-          arrival_time: '2025-08-26T12:00:00',
-          status: 'in_transit',
-          progress_percentage: 40,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '4',
-          flight_code: 'VUELO-004',
-          origin: 'Nueva York',
-          origin_code: 'USA',
-          destination: 'Lima',
-          destination_code: 'PER',
-          current_packages: 200,
-          max_capacity: 280,
-          departure_time: '2025-08-27T09:00:00',
-          arrival_time: '2025-08-27T18:00:00',
-          status: 'in_progress',
-          progress_percentage: 0,
-          created_at: new Date().toISOString()
-        }
-      ];
-      setFlights(sampleFlights);
-    }
+  const loadFlights = () => {
+    setFlights([...SAMPLE_FLIGHTS].sort((a, b) => b.created_at.localeCompare(a.created_at)));
   };
 
-  const handleRegisterFlight = async () => {
-    const flightCode = `VUELO-${String(flights.length + 1).padStart(3, '0')}`;
-
-    const { data, error } = await supabase
-      .from('flights')
-      .insert([{
-        flight_code: flightCode,
-        origin: newFlight.origin,
-        origin_code: 'XXX',
-        destination: newFlight.destination,
-        destination_code: 'YYY',
-        current_packages: parseInt(newFlight.packageQuantity),
-        max_capacity: parseInt(newFlight.maxCapacity),
-        departure_time: newFlight.departureTime,
-        arrival_time: newFlight.arrivalTime,
-        status: 'in_progress',
-        progress_percentage: 0
-      }])
-      .select()
-      .maybeSingle();
-
-    if (data) {
-      loadFlights();
-      setShowNewFlightModal(false);
-      setNewFlight({
-        origin: '',
-        destination: '',
-        maxCapacity: '',
-        packageQuantity: '',
-        departureTime: '',
-        arrivalTime: ''
-      });
-    }
+  const handleRegisterFlight = () => {
+    const flightCode = `VUELO-${String(flightIdCounter++).padStart(3, '0')}`;
+    const flight: Flight = {
+      id: String(flightIdCounter),
+      flight_code: flightCode,
+      origin: newFlight.origin,
+      origin_code: 'XXX',
+      destination: newFlight.destination,
+      destination_code: 'YYY',
+      current_packages: parseInt(newFlight.packageQuantity),
+      max_capacity: parseInt(newFlight.maxCapacity),
+      departure_time: newFlight.departureTime,
+      arrival_time: newFlight.arrivalTime,
+      status: 'in_progress',
+      progress_percentage: 0,
+      created_at: new Date().toISOString()
+    };
+    SAMPLE_FLIGHTS.unshift(flight);
+    loadFlights();
+    setShowNewFlightModal(false);
+    setNewFlight({
+      origin: '',
+      destination: '',
+      maxCapacity: '',
+      packageQuantity: '',
+      departureTime: '',
+      arrivalTime: ''
+    });
   };
 
   const getStatusColor = (status: string) => {

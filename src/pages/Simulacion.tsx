@@ -1,7 +1,26 @@
 import { useState, useEffect } from 'react';
 import { Play, Pause, FastForward, Rewind, Square, Download, Eye } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import type { Simulation } from '../types';
+
+const SAMPLE_SIMULATIONS: Simulation[] = [
+  {
+    id: '1',
+    simulation_type: 'weekly',
+    start_time: '2025-08-24T10:30:00',
+    duration_seconds: 1816,
+    status: 'completed',
+    orders_processed: 12450,
+    flights_completed: 58,
+    packages_delivered: 11820,
+    packages_pending: 630,
+    success_rate: 94.9,
+    max_warehouse_capacity_used: 82,
+    flights_cancelled: 2,
+    created_at: new Date().toISOString()
+  }
+];
+
+let simulationIdCounter = 2;
 
 export default function Simulacion() {
   const [simulations, setSimulations] = useState<Simulation[]>([]);
@@ -15,59 +34,30 @@ export default function Simulacion() {
     loadSimulations();
   }, []);
 
-  const loadSimulations = async () => {
-    const { data, error } = await supabase
-      .from('simulations')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (data && data.length > 0) {
-      setSimulations(data);
-    } else {
-      const sampleSimulation: Simulation = {
-        id: '1',
-        simulation_type: 'weekly',
-        start_time: '2025-08-24T10:30:00',
-        duration_seconds: 1816,
-        status: 'completed',
-        orders_processed: 12450,
-        flights_completed: 58,
-        packages_delivered: 11820,
-        packages_pending: 630,
-        success_rate: 94.9,
-        max_warehouse_capacity_used: 82,
-        flights_cancelled: 2,
-        created_at: new Date().toISOString()
-      };
-      setSimulations([sampleSimulation]);
-    }
+  const loadSimulations = () => {
+    setSimulations([...SAMPLE_SIMULATIONS].sort((a, b) => b.created_at.localeCompare(a.created_at)));
   };
 
-  const handleStartSimulation = async () => {
-    const { data, error } = await supabase
-      .from('simulations')
-      .insert([{
-        simulation_type: selectedScenario,
-        start_time: startDateTime || new Date().toISOString(),
-        duration_seconds: 0,
-        status: 'running',
-        orders_processed: 0,
-        flights_completed: 0,
-        packages_delivered: 0,
-        packages_pending: 0,
-        success_rate: 0,
-        max_warehouse_capacity_used: 0,
-        flights_cancelled: 0
-      }])
-      .select()
-      .maybeSingle();
-
-    if (data) {
-      setCurrentSimulation(data);
-      setIsRunning(true);
-      setShowControlPanel(true);
-    }
+  const handleStartSimulation = () => {
+    const newSimulation: Simulation = {
+      id: String(simulationIdCounter++),
+      simulation_type: selectedScenario,
+      start_time: startDateTime || new Date().toISOString(),
+      duration_seconds: 0,
+      status: 'running',
+      orders_processed: 0,
+      flights_completed: 0,
+      packages_delivered: 0,
+      packages_pending: 0,
+      success_rate: 0,
+      max_warehouse_capacity_used: 0,
+      flights_cancelled: 0,
+      created_at: new Date().toISOString()
+    };
+    SAMPLE_SIMULATIONS.unshift(newSimulation);
+    setCurrentSimulation(newSimulation);
+    setIsRunning(true);
+    setShowControlPanel(true);
   };
 
   const handlePauseSimulation = () => {
@@ -78,13 +68,9 @@ export default function Simulacion() {
     setIsRunning(true);
   };
 
-  const handleStopSimulation = async () => {
+  const handleStopSimulation = () => {
     if (currentSimulation) {
-      await supabase
-        .from('simulations')
-        .update({ status: 'completed' })
-        .eq('id', currentSimulation.id);
-
+      currentSimulation.status = 'completed';
       setIsRunning(false);
       setShowControlPanel(false);
       loadSimulations();
