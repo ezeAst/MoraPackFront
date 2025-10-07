@@ -155,7 +155,9 @@ export default function Simulacion() {
               </div>
 
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha y hora de inicio:</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fecha y hora de inicio de simulación:
+                </label>
                 <input
                   type="datetime-local"
                   value={startDateTime}
@@ -207,10 +209,8 @@ export default function Simulacion() {
 
                   <div className="flex gap-3">
                     <button className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
-                      <Eye className="w-5 h-5" /> Ver detalle
-                    </button>
-                    <button className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
-                      <Download className="w-5 h-5" /> Exportar
+                      <Download className="w-5 h-5" />
+                      Exportar Resultados
                     </button>
                   </div>
                 </div>
