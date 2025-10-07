@@ -124,7 +124,7 @@ export default function Simulacion() {
 
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha y hora de inicio:
+                  Fecha y hora de inicio de simulación:
                 </label>
                 <input
                   type="datetime-local"
