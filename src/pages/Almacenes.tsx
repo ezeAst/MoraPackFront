@@ -262,9 +262,9 @@ export default function Almacenes() {
                     <button className="flex-1 px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
                       Entrar
                     </button>
-                    <button className={`flex-1 px-4 py-2 rounded-lg font-medium ${statusBadge.color}`}>
+                    <span className={`flex-1 px-4 py-2 rounded-lg font-medium text-center ${statusBadge.color}`}>
                       {statusBadge.label}
-                    </button>
+                    </span>
                   </div>
                 </div>
               </div>
