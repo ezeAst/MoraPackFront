@@ -201,12 +201,8 @@ export default function Simulacion() {
 
                   <div className="flex gap-3">
                     <button className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
-                      <Eye className="w-5 h-5" />
-                      Ver detalle
-                    </button>
-                    <button className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
                       <Download className="w-5 h-5" />
-                      Exportar
+                      Exportar Resultados
                     </button>
                   </div>
                 </div>
