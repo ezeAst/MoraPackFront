@@ -1,6 +1,8 @@
+@import "mapbox-gl/dist/mapbox-gl.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import "leaflet/dist/leaflet.css";
-.leaflet-container img { max-width:none !important; } /* FIX tailwind */
+
+/* Leaflet styles (for backward compatibility if needed) */
+.leaflet-container img { max-width:none !important; }
 .leaflet-container { width:100% !important; height:100% !important; }

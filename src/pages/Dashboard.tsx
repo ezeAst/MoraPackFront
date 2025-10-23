@@ -1,13 +1,6 @@
-import { useLayoutEffect, useState } from 'react';
-import { Plane, Info, BarChart3, Bell } from 'lucide-react';
-import {
-  MapContainer,
-  TileLayer,
-  CircleMarker,
-  Polyline,
-  Tooltip,
-} from 'react-leaflet';
-import L from 'leaflet';
+import { useState } from 'react';
+import { BarChart3, Bell, Info } from 'lucide-react';
+import MapboxMap from '../components/MapboxMap';
 
 type Status = 'normal' | 'warning' | 'critical';
 
@@ -19,22 +12,15 @@ type Warehouse = {
 };
 
 type Route = {
-  pts: [number, number][];
+  id: string;
+  coordinates: [number, number][];
   color: string;
-  dash: string; // "5,5" etc.
 };
 
 export default function Dashboard() {
   const [showStats, setShowStats] = useState(true);
   const [showAlerts, setShowAlerts] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
-
-  const [map, setMap] = useState<L.Map | null>(null);
-
-  // Puntos clave
-  const LIMA: [number, number] = [-12.0464, -77.0428];
-  const BRUSELAS: [number, number] = [50.8503, 4.3517];
-  const BAKU: [number, number] = [40.4093, 49.8671];
 
   const stats = [
     { label: 'Vuelos activos', value: '24' },
@@ -52,39 +38,28 @@ export default function Dashboard() {
   ];
 
   const warehouses: Warehouse[] = [
-    { name: 'Lima',     lat: -12.0464, lng: -77.0428, status: 'warning' },
-    { name: 'Bruselas', lat: 50.8503,  lng: 4.3517,   status: 'critical' },
-    { name: 'Baku',     lat: 40.4093,  lng: 49.8671,  status: 'normal' },
+    { name: 'Lima', lat: -12.0464, lng: -77.0428, status: 'warning' },
+    { name: 'Bruselas', lat: 50.8503, lng: 4.3517, status: 'critical' },
+    { name: 'Baku', lat: 40.4093, lng: 49.8671, status: 'normal' },
   ];
 
-  const rutas: Route[] = [
-    { pts: [LIMA, BRUSELAS], color: '#FF6600', dash: '5,5' }, // América → Europa
-    { pts: [BRUSELAS, BAKU], color: '#0066FF', dash: '5,5' }, // Europa → Asia
-    { pts: [LIMA, [-6.8, -35]], color: '#FFC107', dash: '3,3' }, // ejemplo adicional
+  const routes: Route[] = [
+    { 
+      id: 'route-1',
+      coordinates: [[-77.0428, -12.0464], [4.3517, 50.8503]], 
+      color: '#FF6600' 
+    },
+    { 
+      id: 'route-2',
+      coordinates: [[4.3517, 50.8503], [49.8671, 40.4093]], 
+      color: '#0066FF' 
+    },
+    { 
+      id: 'route-3',
+      coordinates: [[-71.5, -16.5], [-43.2, -22.9]], 
+      color: '#FFC107' 
+    },
   ];
-
-  // Bounds para ajustar el mapa a los puntos importantes
-  const bounds = L.latLngBounds([LIMA, BRUSELAS, BAKU]);
-
-  // 🔧 Invalidate + fitBounds apenas monta (useLayoutEffect evita parpadeo)
-  useLayoutEffect(() => {
-    if (!map) return;
-
-    // Ajusta a bounds con padding
-    map.fitBounds(bounds, { padding: [40, 40] });
-
-    // Invalida tamaño inmediatamente (crítico para que no se “rompan” las teselas)
-    map.invalidateSize();
-
-    // Recalcula al redimensionar ventana
-    const onResize = () => map.invalidateSize();
-    window.addEventListener('resize', onResize);
-
-    return () => {
-      window.removeEventListener('resize', onResize);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -115,66 +90,8 @@ export default function Dashboard() {
         <div className="relative bg-white rounded-2xl shadow-lg overflow-hidden">
           {/* Alto grande pero no full-screen */}
           <div className="relative h-[68vh] min-h-[520px] bg-gray-200">
-            {/* Botones zoom */}
-            <div className="absolute top-4 left-4 z-20 flex gap-2">
-              <button
-                onClick={() => map?.zoomIn()}
-                className="bg-white rounded-full w-10 h-10 flex items-center justify-center shadow hover:bg-gray-50"
-              >
-                +
-              </button>
-              <button
-                onClick={() => map?.zoomOut()}
-                className="bg-white rounded-full w-10 h-10 flex items-center justify-center shadow hover:bg-gray-50"
-              >
-                -
-              </button>
-            </div>
-
-            {/* Mapa real (Leaflet + OSM) */}
-            <MapContainer
-              whenCreated={setMap}
-              bounds={bounds}
-              zoomControl={false}
-              className="absolute inset-0 rounded-none"
-              style={{ background: '#e5e7eb' }}
-            >
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              />
-
-              {/* Rutas */}
-              {rutas.map((r, i) => (
-                <Polyline
-                  key={i}
-                  positions={r.pts}
-                  pathOptions={{ color: r.color, weight: 3, dashArray: r.dash }}
-                />
-              ))}
-
-              {/* Almacenes */}
-              {warehouses.map((w, i) => {
-                const color =
-                  w.status === 'critical'
-                    ? '#DC3545'
-                    : w.status === 'warning'
-                    ? '#FFC107'
-                    : '#28A745';
-                return (
-                  <CircleMarker
-                    key={i}
-                    center={[w.lat, w.lng]}
-                    radius={10}
-                    pathOptions={{ color, fillColor: color, fillOpacity: 1, weight: 2 }}
-                  >
-                    <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                      <div className="font-semibold text-gray-800">{w.name}</div>
-                    </Tooltip>
-                  </CircleMarker>
-                );
-              })}
-            </MapContainer>
+            {/* Mapa Mapbox */}
+            <MapboxMap warehouses={warehouses} routes={routes} />
 
             {/* Botón leyenda */}
             <button
@@ -190,24 +107,24 @@ export default function Dashboard() {
                 <div className="px-4 py-3 rounded-xl bg-white/95 backdrop-blur border shadow">
                   <div className="flex flex-col md:flex-row md:items-center gap-4 text-sm">
                     <div className="flex items-center gap-4">
-                      <span className="font-semibold text-gray-700">Almacenes y aviones</span>
+                      <span className="font-semibold text-gray-700">Almacenes</span>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
-                          <Plane className="w-4 h-4 text-green-600" />
+                          <div className="w-4 h-4 rounded-full bg-green-600"></div>
                           <span className="text-gray-600">&lt; 70%</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <Plane className="w-4 h-4 text-yellow-600" />
+                          <div className="w-4 h-4 rounded-full bg-yellow-600"></div>
                           <span className="text-gray-600">≈ 90%</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <Plane className="w-4 h-4 text-red-600" />
+                          <div className="w-4 h-4 rounded-full bg-red-600"></div>
                           <span className="text-gray-600">&gt; 90%</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="font-semibold text-gray-700">Origen de ruta</span>
+                      <span className="font-semibold text-gray-700">Rutas</span>
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-0.5 border-t-2 border-dashed border-orange-500" />
                         <span className="text-gray-600">América</span>
@@ -259,10 +176,9 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-          </div>{/* /map height */}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

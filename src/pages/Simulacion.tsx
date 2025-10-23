@@ -1,15 +1,12 @@
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Play, Pause, FastForward, Rewind, Square, Download, Eye,
+  Play, Pause, FastForward, Rewind, Square, Download,
   ChevronDown, ChevronUp
 } from 'lucide-react';
-import {
-  MapContainer, TileLayer, Polyline, CircleMarker, Tooltip
-} from 'react-leaflet';
-import L from 'leaflet';
+import { Marker } from 'react-map-gl';
+import MapboxMap from '../components/MapboxMap';
 import type { Simulation } from '../types';
 
-// --- Datos demo / mismo que tenías ---
 const SAMPLE_SIMULATIONS: Simulation[] = [
   {
     id: '1',
@@ -29,33 +26,24 @@ const SAMPLE_SIMULATIONS: Simulation[] = [
 ];
 let simulationIdCounter = 2;
 
+type Flight = {
+  id: string;
+  from: [number, number];
+  to: [number, number];
+  progress: number; // 0 to 1
+};
+
 export default function Simulacion() {
   const [simulations, setSimulations] = useState<Simulation[]>([...SAMPLE_SIMULATIONS]);
   const [selectedScenario, setSelectedScenario] = useState<'weekly' | 'stress_test'>('weekly');
   const [startDateTime, setStartDateTime] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [showControlView, setShowControlView] = useState(false);
-
-  // overlays en modo control
   const [showTopBar, setShowTopBar] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
-  const [showLegend, setShowLegend] = useState(true);
 
-  const [map, setMap] = useState<L.Map | null>(null);
-
-  // --- Datos del mapa ---
-  const LIMA: [number, number] = [-12.0464, -77.0428];
-  const BRU: [number, number] = [50.8503, 4.3517];
-  const BAK: [number, number] = [40.4093, 49.8671];
-
-  const rutas = useMemo(
-    () => [
-      { pts: [LIMA, BRU] as [number, number][], color: '#FF6600', dash: '5,5' },
-      { pts: [BRU, BAK] as [number, number][], color: '#0066FF', dash: '5,5' },
-      { pts: [[-16.5, -71.5], [-22.9, -43.2]] as [number, number][], color: '#22c55e', dash: '4,4' }
-    ],
-    []
-  );
+  // Vuelos animados
+  const [flights, setFlights] = useState<Flight[]>([]);
 
   const warehouses = [
     { name: 'Lima', lat: -12.0464, lng: -77.0428, status: 'warning' as const },
@@ -63,18 +51,50 @@ export default function Simulacion() {
     { name: 'Baku', lat: 40.4093, lng: 49.8671, status: 'normal' as const },
   ];
 
-  const bounds = useMemo(() => L.latLngBounds([LIMA, BRU, BAK]), []);
+  const routes = [
+    { id: 'route-1', coordinates: [[-77.0428, -12.0464], [4.3517, 50.8503]] as [number, number][], color: '#FF6600' },
+    { id: 'route-2', coordinates: [[4.3517, 50.8503], [49.8671, 40.4093]] as [number, number][], color: '#0066FF' },
+    { id: 'route-3', coordinates: [[-71.5, -16.5], [-43.2, -22.9]] as [number, number][], color: '#22c55e' },
+  ];
 
-  useLayoutEffect(() => {
-    if (!map) return;
-    map.fitBounds(bounds, { padding: [40, 40] });
-    map.invalidateSize();
-    const onResize = () => map.invalidateSize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [map, bounds]);
+  // Inicializar vuelos aleatorios
+  const initFlights = useCallback(() => {
+    const newFlights: Flight[] = [];
+    const routePairs = [
+      { from: [-77.0428, -12.0464] as [number, number], to: [4.3517, 50.8503] as [number, number] },
+      { from: [4.3517, 50.8503] as [number, number], to: [49.8671, 40.4093] as [number, number] },
+      { from: [-71.5, -16.5] as [number, number], to: [-43.2, -22.9] as [number, number] },
+    ];
 
-  // --- Simulación: acciones ---
+    for (let i = 0; i < 8; i++) {
+      const route = routePairs[Math.floor(Math.random() * routePairs.length)];
+      newFlights.push({
+        id: `flight-${i}`,
+        from: route.from,
+        to: route.to,
+        progress: Math.random()
+      });
+    }
+    setFlights(newFlights);
+  }, []);
+
+  // Animar vuelos
+  useEffect(() => {
+    if (!isRunning || !showControlView) return;
+
+    const interval = setInterval(() => {
+      setFlights(prev => prev.map(flight => {
+        let newProgress = flight.progress + 0.01;
+        if (newProgress >= 1) {
+          newProgress = 0;
+        }
+        return { ...flight, progress: newProgress };
+      }));
+    }, 50); // 50ms = animación fluida
+
+    return () => clearInterval(interval);
+  }, [isRunning, showControlView]);
+
   const handleStartSimulation = () => {
     const newSimulation: Simulation = {
       id: String(simulationIdCounter++),
@@ -95,7 +115,9 @@ export default function Simulacion() {
     setSimulations([...SAMPLE_SIMULATIONS]);
     setIsRunning(true);
     setShowControlView(true);
+    initFlights();
   };
+
   const handlePause = () => setIsRunning(false);
   const handleResume = () => setIsRunning(true);
   const handleStop = () => {
@@ -104,6 +126,7 @@ export default function Simulacion() {
     setIsRunning(false);
     setShowControlView(false);
     setSimulations([...SAMPLE_SIMULATIONS]);
+    setFlights([]);
   };
 
   const formatDuration = (seconds: number) => {
@@ -112,19 +135,24 @@ export default function Simulacion() {
     return `${m}min ${s}seg`;
   };
 
+  // Interpolar posición del vuelo
+  const interpolatePosition = (from: [number, number], to: [number, number], progress: number): [number, number] => {
+    return [
+      from[0] + (to[0] - from[0]) * progress,
+      from[1] + (to[1] - from[1]) * progress
+    ];
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-[#FF6600] text-white px-6 py-5">
         <h1 className="text-3xl font-bold">Simulación del sistema</h1>
         <p className="text-lg mt-1">Pruebe el rendimiento del sistema en diferentes escenarios</p>
       </div>
 
-      {/* === Vista 1: Selección === */}
       {!showControlView ? (
         <div className="p-6">
           <div className="mx-auto max-w-[1200px] grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Selección */}
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Selección de escenario</h2>
 
@@ -175,7 +203,6 @@ export default function Simulacion() {
               </button>
             </div>
 
-            {/* Últimos resultados */}
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Últimos resultados</h2>
 
@@ -219,28 +246,22 @@ export default function Simulacion() {
           </div>
         </div>
       ) : (
-        /* === Vista 2: Panel de control sobre mapa === */
         <div className="p-6">
           <div className="mx-auto max-w-[1400px] bg-white rounded-2xl shadow-lg overflow-hidden relative">
-            {/* ---------- BARRA SUPERIOR (con espaciador) ---------- */}
-            {/* Espaciador que reserva altura para que el mapa no "salte" */}
             <div style={{ height: showTopBar ? 96 : 28 }} />
 
-            {/* Barra flotante */}
             <div
               className={`absolute top-0 left-0 right-0 z-20 transition-transform duration-200 ${
                 showTopBar ? 'translate-y-0' : '-translate-y-full'
               }`}
             >
               <div className="bg-white/95 backdrop-blur rounded-t-2xl border-b shadow-sm">
-                {/* Título + estado */}
                 <div className="px-6 pt-4 flex items-center justify-between">
                   <h2 className="text-2xl font-bold text-gray-900">Panel de control</h2>
                   <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
                     Estado: {isRunning ? 'en ejecución' : 'pausado'}
                   </p>
                 </div>
-                {/* Botones */}
                 <div className="px-6 pb-3 pt-3 flex flex-wrap items-center gap-3">
                   {!isRunning ? (
                     <button
@@ -272,7 +293,6 @@ export default function Simulacion() {
                 </div>
               </div>
 
-              {/* Handle centrado */}
               <div className="relative">
                 <button
                   onClick={() => setShowTopBar(v => !v)}
@@ -284,66 +304,46 @@ export default function Simulacion() {
               </div>
             </div>
 
-            {/* --------------------- MAPA --------------------- */}
             <div className="relative h-[70vh] min-h-[520px] bg-gray-200">
-              <MapContainer
-                whenCreated={setMap}
-                bounds={bounds}
-                zoomControl={false}
-                className="absolute inset-0"
-                style={{ background: '#eef2f7' }}
-              >
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
-
-                {rutas.map((r, i) => (
-                  <Polyline key={i} pathOptions={{ color: r.color, weight: 3, dashArray: r.dash }} positions={r.pts} />
-                ))}
-
-                {warehouses.map((w, i) => {
-                  const color = w.status === 'critical' ? '#DC3545' : w.status === 'warning' ? '#FFC107' : '#28A745';
+              <MapboxMap warehouses={warehouses} routes={routes}>
+                {/* Vuelos animados */}
+                {flights.map(flight => {
+                  const [lng, lat] = interpolatePosition(flight.from, flight.to, flight.progress);
                   return (
-                    <CircleMarker key={i} center={[w.lat, w.lng]} radius={10} pathOptions={{ color, fillColor: color, fillOpacity: 1, weight: 2 }}>
-                      <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                        <div className="font-semibold text-gray-800">{w.name}</div>
-                      </Tooltip>
-                    </CircleMarker>
+                    <Marker key={flight.id} longitude={lng} latitude={lat}>
+                      <div className="relative">
+                        <svg width="24" height="24" viewBox="0 0 24 24" className="drop-shadow-lg">
+                          <path
+                            d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
+                            fill="#FF6600"
+                            transform="rotate(45 12 12)"
+                          />
+                        </svg>
+                      </div>
+                    </Marker>
                   );
                 })}
-              </MapContainer>
+              </MapboxMap>
 
-              {/* Leyenda y panel derecho quedan igual que antes */}
-              {/* ... (tu leyenda y drawer derecho) ... */}
-
-              {/* Footer info */}
               <div className="absolute left-0 right-0 bottom-0 text-xs md:text-sm text-gray-700 flex justify-between px-4 py-2 bg-white/80 backdrop-blur border-t">
                 <span>Tiempo transcurrido: 5 días, 15 horas y 2 minutos</span>
                 <span>Hora actual: 30/08/2025 01:32 AM</span>
               </div>
 
-              {/* Panel lateral derecho (colapsable) */}
               <div className={`absolute top-6 right-0 h-[calc(100%-3rem)] transition-transform duration-200 ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="bg-white rounded-l-2xl shadow-xl w-[360px] h-full p-6 overflow-y-auto">
                   <div className="mb-4">
                     <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>Estado: {isRunning ? 'en ejecución' : 'pausado'}</p>
                     <p className="text-sm text-gray-600">Tipo: {selectedScenario === 'weekly' ? 'Semanal' : 'Prueba de colapso'}</p>
-                    <p className="text-sm text-gray-600">Tiempo restante: 18 minutos</p>
+                    <p className="text-sm text-gray-600">Vuelos activos: {flights.length}</p>
                   </div>
 
-                  <h3 className="text-lg font-bold text-gray-800 mb-3">Métricas parciales en ejecución</h3>
+                  <h3 className="text-lg font-bold text-gray-800 mb-3">Métricas parciales</h3>
                   <div className="space-y-2 text-sm">
                     <p className="text-gray-700"><span className="font-semibold">% avance:</span> 62%</p>
                     <p className="text-gray-700"><span className="font-semibold">Envíos procesados:</span> 8,450</p>
                     <p className="text-gray-700"><span className="font-semibold">Vuelos completados:</span> 47</p>
-                    <p className="text-gray-700"><span className="font-semibold">Vuelos en curso:</span> 7</p>
-                    <p className="text-gray-700"><span className="font-semibold">Envíos entregados:</span> 6,820</p>
-                    <p className="text-gray-700"><span className="font-semibold">Envíos pendientes:</span> 2,630</p>
-                    <p className="text-gray-700"><span className="font-semibold">Capacidad almacenes usada:</span> 62%</p>
-                    <p className="text-gray-700"><span className="font-semibold">Vuelos cancelados:</span> 2</p>
-                  </div>
-
-                  <h3 className="text-lg font-bold text-gray-800 mt-6 mb-3">Notificaciones</h3>
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
-                    ⚠️ El pedido ABC se distribuirá en dos vuelos: VL-220 y VL-221
+                    <p className="text-gray-700"><span className="font-semibold">Vuelos en curso:</span> {flights.length}</p>
                   </div>
 
                   <button className="mt-6 w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
@@ -354,7 +354,6 @@ export default function Simulacion() {
                 <button
                   onClick={() => setShowRightPanel(v => !v)}
                   className="absolute left-[-28px] top-1/2 -translate-y-1/2 bg-white border rounded-l px-2 py-6 shadow hover:bg-gray-50"
-                  title={showRightPanel ? 'Ocultar panel' : 'Mostrar panel'}
                 >
                   {showRightPanel ? '<' : '>'}
                 </button>
