@@ -1,147 +1,132 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Play, Pause, FastForward, Rewind, Square, Download,
+  Play, Pause, Square, Download,
   ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
-import type { Simulation } from '../types';
-
-const SAMPLE_SIMULATIONS: Simulation[] = [
-  {
-    id: '1',
-    simulation_type: 'weekly',
-    start_time: '2025-08-24T10:30:00',
-    duration_seconds: 1816,
-    status: 'completed',
-    orders_processed: 12450,
-    flights_completed: 58,
-    packages_delivered: 11820,
-    packages_pending: 630,
-    success_rate: 94.9,
-    max_warehouse_capacity_used: 82,
-    flights_cancelled: 2,
-    created_at: new Date().toISOString()
-  }
-];
-let simulationIdCounter = 2;
-
-type Flight = {
-  id: string;
-  from: [number, number];
-  to: [number, number];
-  progress: number; // 0 to 1
-};
+import * as api from '../services/api';
 
 export default function Simulacion() {
-  const [simulations, setSimulations] = useState<Simulation[]>([...SAMPLE_SIMULATIONS]);
   const [selectedScenario, setSelectedScenario] = useState<'weekly' | 'stress_test'>('weekly');
   const [startDateTime, setStartDateTime] = useState('');
-  const [isRunning, setIsRunning] = useState(false);
   const [showControlView, setShowControlView] = useState(false);
   const [showTopBar, setShowTopBar] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
 
-  // Vuelos animados
-  const [flights, setFlights] = useState<Flight[]>([]);
+  // Estados de la simulación
+  const [simulationId, setSimulationId] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [flights, setFlights] = useState<api.Flight[]>([]);
+  const [warehouses, setWarehouses] = useState<api.Warehouse[]>([]);
+  const [metrics, setMetrics] = useState<api.SimulationMetrics | null>(null);
+  const [events, setEvents] = useState<api.SimulationEvent[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const warehouses = [
-    { name: 'Lima', lat: -12.0464, lng: -77.0428, status: 'warning' as const },
-    { name: 'Bruselas', lat: 50.8503, lng: 4.3517, status: 'critical' as const },
-    { name: 'Baku', lat: 40.4093, lng: 49.8671, status: 'normal' as const },
-  ];
-
-  const routes = [
-    { id: 'route-1', coordinates: [[-77.0428, -12.0464], [4.3517, 50.8503]] as [number, number][], color: '#FF6600' },
-    { id: 'route-2', coordinates: [[4.3517, 50.8503], [49.8671, 40.4093]] as [number, number][], color: '#0066FF' },
-    { id: 'route-3', coordinates: [[-71.5, -16.5], [-43.2, -22.9]] as [number, number][], color: '#22c55e' },
-  ];
-
-  // Inicializar vuelos aleatorios
-  const initFlights = useCallback(() => {
-    const newFlights: Flight[] = [];
-    const routePairs = [
-      { from: [-77.0428, -12.0464] as [number, number], to: [4.3517, 50.8503] as [number, number] },
-      { from: [4.3517, 50.8503] as [number, number], to: [49.8671, 40.4093] as [number, number] },
-      { from: [-71.5, -16.5] as [number, number], to: [-43.2, -22.9] as [number, number] },
-    ];
-
-    for (let i = 0; i < 8; i++) {
-      const route = routePairs[Math.floor(Math.random() * routePairs.length)];
-      newFlights.push({
-        id: `flight-${i}`,
-        from: route.from,
-        to: route.to,
-        progress: Math.random()
-      });
-    }
-    setFlights(newFlights);
-  }, []);
-
-  // Animar vuelos
+  // Polling para actualizar estado
   useEffect(() => {
-    if (!isRunning || !showControlView) return;
+    if (!simulationId || !isRunning) return;
 
-    const interval = setInterval(() => {
-      setFlights(prev => prev.map(flight => {
-        let newProgress = flight.progress + 0.01;
-        if (newProgress >= 1) {
-          newProgress = 0;
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.getSimulationStatus(simulationId);
+        
+        // Actualizar solo vuelos activos (los que están en el aire)
+        setFlights(status.activeFlights);
+        setWarehouses(status.warehouses);
+        setMetrics(status.metrics);
+        setEvents(status.recentEvents.slice(0, 5)); // Últimos 5 eventos
+        setProgress(status.progressPercentage);
+        setCurrentTime(status.currentDateTime);
+
+        // Si llegó al 100%, detener
+        if (status.progressPercentage >= 100) {
+          setIsRunning(false);
         }
-        return { ...flight, progress: newProgress };
-      }));
-    }, 50); // 50ms = animación fluida
+      } catch (err) {
+        console.error('Error al obtener estado:', err);
+      }
+    }, 1500); // Polling cada 1.5 segundos
 
     return () => clearInterval(interval);
-  }, [isRunning, showControlView]);
+  }, [simulationId, isRunning]);
 
-  const handleStartSimulation = () => {
-    const newSimulation: Simulation = {
-      id: String(simulationIdCounter++),
-      simulation_type: selectedScenario,
-      start_time: startDateTime || new Date().toISOString(),
-      duration_seconds: 0,
-      status: 'running',
-      orders_processed: 0,
-      flights_completed: 0,
-      packages_delivered: 0,
-      packages_pending: 0,
-      success_rate: 0,
-      max_warehouse_capacity_used: 0,
-      flights_cancelled: 0,
-      created_at: new Date().toISOString()
-    };
-    SAMPLE_SIMULATIONS.unshift(newSimulation);
-    setSimulations([...SAMPLE_SIMULATIONS]);
-    setIsRunning(true);
-    setShowControlView(true);
-    initFlights();
+  const handleStartSimulation = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.createSimulation({
+        type: selectedScenario,
+        startTime: startDateTime || new Date().toISOString(),
+        alphaGrasp: 0.3,
+        tamanoRcl: 3
+      });
+
+      setSimulationId(response.simulationId);
+      setWarehouses(response.warehouses);
+      setIsRunning(true);
+      setShowControlView(true);
+      setProgress(0);
+      
+    } catch (err: any) {
+      setError(err.message || 'Error al crear la simulación');
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handlePause = () => setIsRunning(false);
-  const handleResume = () => setIsRunning(true);
-  const handleStop = () => {
-    const running = SAMPLE_SIMULATIONS.find(s => s.status === 'running');
-    if (running) running.status = 'completed';
-    setIsRunning(false);
-    setShowControlView(false);
-    setSimulations([...SAMPLE_SIMULATIONS]);
-    setFlights([]);
+  const handlePause = async () => {
+    if (!simulationId) return;
+    try {
+      await api.controlSimulation(simulationId, 'pause');
+      setIsRunning(false);
+    } catch (err) {
+      console.error('Error al pausar:', err);
+    }
   };
 
-  const formatDuration = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}min ${s}seg`;
+  const handleResume = async () => {
+    if (!simulationId) return;
+    try {
+      await api.controlSimulation(simulationId, 'resume');
+      setIsRunning(true);
+    } catch (err) {
+      console.error('Error al reanudar:', err);
+    }
   };
 
-  // Interpolar posición del vuelo
-  const interpolatePosition = (from: [number, number], to: [number, number], progress: number): [number, number] => {
-    return [
-      from[0] + (to[0] - from[0]) * progress,
-      from[1] + (to[1] - from[1]) * progress
-    ];
+  const handleStop = async () => {
+    if (!simulationId) return;
+    try {
+      await api.controlSimulation(simulationId, 'stop');
+      setIsRunning(false);
+      setShowControlView(false);
+      setSimulationId(null);
+      setFlights([]);
+    } catch (err) {
+      console.error('Error al detener:', err);
+    }
   };
+
+  // Convertir warehouses a formato del mapa
+  const warehousesForMap = warehouses.map(w => ({
+    name: w.name,
+    lat: w.lat,
+    lng: w.lng,
+    status: w.status as 'normal' | 'warning' | 'critical'
+  }));
+
+  // Convertir routes para el mapa (solo si hay vuelos activos)
+  const routesForMap = flights.map(f => ({
+    id: f.id,
+    coordinates: f.route,
+    color: '#FF6600'
+  }));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -155,6 +140,12 @@ export default function Simulacion() {
           <div className="mx-auto max-w-[1200px] grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Selección de escenario</h2>
+
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                  {error}
+                </div>
+              )}
 
               <div className="space-y-4 mb-6">
                 <button
@@ -196,52 +187,48 @@ export default function Simulacion() {
 
               <button
                 onClick={handleStartSimulation}
-                className="w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2"
+                disabled={loading}
+                className="w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Play className="w-5 h-5" />
-                Comenzar
+                {loading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Creando simulación...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    Comenzar
+                  </>
+                )}
               </button>
+
+              <p className="text-xs text-gray-500 mt-3">
+                ⏱️ Nota: La simulación tarda 5-10 segundos en crearse (ejecuta algoritmo GRASP)
+              </p>
             </div>
 
             <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-6">Últimos resultados</h2>
-
-              {simulations[0] && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-600"><span className="font-semibold">Tipo de simulación:</span> {simulations[0].simulation_type === 'weekly' ? 'Semanal' : 'Prueba de colapso'}</p>
-                    <p className="text-sm text-gray-600"><span className="font-semibold">Fecha y hora de ejecución:</span> {new Date(simulations[0].start_time).toLocaleString('es-PE')}</p>
-                    <p className="text-sm text-gray-600"><span className="font-semibold">Duración:</span> {formatDuration(simulations[0].duration_seconds)}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-600 mb-2">Progreso de la simulación</p>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-green-500 h-3 rounded-full" style={{ width: '100%' }} />
-                    </div>
-                    <p className="text-sm text-right text-gray-600 mt-1">100%</p>
-                  </div>
-
-                  <div className="space-y-2 pt-4 border-t border-gray-200 text-sm text-gray-700">
-                    <p><span className="font-semibold">Pedidos procesados:</span> {simulations[0].orders_processed.toLocaleString()}</p>
-                    <p><span className="font-semibold">Vuelos realizados:</span> {simulations[0].flights_completed}</p>
-                    <p><span className="font-semibold">Paquetes entregados:</span> {simulations[0].packages_delivered.toLocaleString()}</p>
-                    <p><span className="font-semibold">Paquetes pendientes:</span> {simulations[0].packages_pending}</p>
-                    <p><span className="font-semibold">Tasa de éxito:</span> {simulations[0].success_rate}%</p>
-                    <p><span className="font-semibold">Capacidad máx. usada:</span> {simulations[0].max_warehouse_capacity_used}%</p>
-                    <p><span className="font-semibold">Vuelos cancelados:</span> {simulations[0].flights_cancelled}</p>
-                  </div>
-
-                  <p className="text-sm font-semibold text-green-600 pt-4 border-t border-gray-200">Estado: finalizada</p>
-
-                  <div className="flex gap-3">
-                    <button className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
-                      <Download className="w-5 h-5" />
-                      Exportar Resultados
-                    </button>
-                  </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-6">Información</h2>
+              <div className="space-y-4 text-sm text-gray-700">
+                <div>
+                  <p className="font-semibold mb-2">Escala de tiempo:</p>
+                  <p>• 1 segundo real = 112 segundos simulados</p>
+                  <p>• 1 semana simulada = 90 minutos reales</p>
                 </div>
-              )}
+                <div>
+                  <p className="font-semibold mb-2">Durante la simulación:</p>
+                  <p>• Los aviones se moverán en tiempo real</p>
+                  <p>• Los almacenes cambiarán de estado</p>
+                  <p>• Se generarán eventos y métricas</p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-2">Controles:</p>
+                  <p>• Pausar: Congela la simulación</p>
+                  <p>• Reanudar: Continúa desde donde pausó</p>
+                  <p>• Detener: Termina la simulación</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -278,12 +265,6 @@ export default function Simulacion() {
                       <Pause className="w-5 h-5" /> Pausar
                     </button>
                   )}
-                  <button className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center gap-2">
-                    <FastForward className="w-5 h-5" /> Aumentar
-                  </button>
-                  <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2">
-                    <Rewind className="w-5 h-5" /> Reducir
-                  </button>
                   <button
                     onClick={handleStop}
                     className="ml-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
@@ -305,48 +286,77 @@ export default function Simulacion() {
             </div>
 
             <div className="relative h-[70vh] min-h-[520px] bg-gray-200">
-              <MapboxMap warehouses={warehouses} routes={routes}>
-                {/* Vuelos animados */}
-                {flights.map(flight => {
-                  const [lng, lat] = interpolatePosition(flight.from, flight.to, flight.progress);
-                  return (
-                    <Marker key={flight.id} longitude={lng} latitude={lat}>
-                      <div className="relative">
-                        <svg width="24" height="24" viewBox="0 0 24 24" className="drop-shadow-lg">
-                          <path
-                            d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
-                            fill="#FF6600"
-                            transform="rotate(45 12 12)"
-                          />
-                        </svg>
+              <MapboxMap warehouses={warehousesForMap} routes={routesForMap}>
+                {/* Vuelos en tiempo real desde el backend */}
+                {flights.map(flight => (
+                  <Marker 
+                    key={flight.id} 
+                    longitude={flight.currentLng} 
+                    latitude={flight.currentLat}
+                  >
+                    <div className="relative group">
+                      <svg width="28" height="28" viewBox="0 0 24 24" className="drop-shadow-lg">
+                        <path
+                          d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
+                          fill={flight.status === 'in_flight' ? '#FF6600' : '#94a3b8'}
+                          transform="rotate(45 12 12)"
+                        />
+                      </svg>
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                        <div className="font-semibold">{flight.flightCode}</div>
+                        <div>{flight.origin} → {flight.destination}</div>
+                        <div>{Math.round(flight.progressPercentage)}% completado</div>
+                        <div>{flight.packages} paquetes</div>
                       </div>
-                    </Marker>
-                  );
-                })}
+                    </div>
+                  </Marker>
+                ))}
               </MapboxMap>
 
               <div className="absolute left-0 right-0 bottom-0 text-xs md:text-sm text-gray-700 flex justify-between px-4 py-2 bg-white/80 backdrop-blur border-t">
-                <span>Tiempo transcurrido: 5 días, 15 horas y 2 minutos</span>
-                <span>Hora actual: 30/08/2025 01:32 AM</span>
+                <span>Progreso: {progress.toFixed(1)}%</span>
+                <span>Hora simulada: {currentTime}</span>
               </div>
 
               <div className={`absolute top-6 right-0 h-[calc(100%-3rem)] transition-transform duration-200 ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="bg-white rounded-l-2xl shadow-xl w-[360px] h-full p-6 overflow-y-auto">
                   <div className="mb-4">
-                    <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>Estado: {isRunning ? 'en ejecución' : 'pausado'}</p>
+                    <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
+                      Estado: {isRunning ? 'en ejecución' : 'pausado'}
+                    </p>
                     <p className="text-sm text-gray-600">Tipo: {selectedScenario === 'weekly' ? 'Semanal' : 'Prueba de colapso'}</p>
                     <p className="text-sm text-gray-600">Vuelos activos: {flights.length}</p>
                   </div>
 
-                  <h3 className="text-lg font-bold text-gray-800 mb-3">Métricas parciales</h3>
-                  <div className="space-y-2 text-sm">
-                    <p className="text-gray-700"><span className="font-semibold">% avance:</span> 62%</p>
-                    <p className="text-gray-700"><span className="font-semibold">Envíos procesados:</span> 8,450</p>
-                    <p className="text-gray-700"><span className="font-semibold">Vuelos completados:</span> 47</p>
-                    <p className="text-gray-700"><span className="font-semibold">Vuelos en curso:</span> {flights.length}</p>
-                  </div>
+                  {metrics && (
+                    <>
+                      <h3 className="text-lg font-bold text-gray-800 mb-3">Métricas</h3>
+                      <div className="space-y-2 text-sm mb-6">
+                        <p className="text-gray-700"><span className="font-semibold">Pedidos procesados:</span> {metrics.ordersProcessed}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Vuelos completados:</span> {metrics.flightsCompleted}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Paquetes entregados:</span> {metrics.packagesDelivered}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Paquetes pendientes:</span> {metrics.packagesPending}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Tasa de éxito:</span> {metrics.successRate.toFixed(1)}%</p>
+                        <p className="text-gray-700"><span className="font-semibold">Violaciones:</span> {metrics.warehouseViolations + metrics.flightViolations}</p>
+                      </div>
+                    </>
+                  )}
 
-                  <button className="mt-6 w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
+                  {events.length > 0 && (
+                    <>
+                      <h3 className="text-lg font-bold text-gray-800 mb-3">Eventos recientes</h3>
+                      <div className="space-y-2 mb-6">
+                        {events.map((event, i) => (
+                          <div key={i} className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-gray-700">
+                            {event.message}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  <button className="w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
                     <Download className="w-5 h-5" /> Exportar
                   </button>
                 </div>
