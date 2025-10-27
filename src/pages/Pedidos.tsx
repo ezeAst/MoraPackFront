@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Package, Clock, DollarSign } from 'lucide-react';
 import Papa from 'papaparse'; // Asegúrate de instalar papaparse: npm install papaparse
 import type { Order, Client, Route } from '../types';
+import { pasarPedidos } from '../utils/pasarPedidos';
+import { planificarConPedidos, getPlanResultado, getPlanStatus } from '../services/apiPlanificacion';
+
 
 const MOCK_CLIENTS: Client[] = [
   { id: '1', first_name: 'Juan', last_name: 'Pérez', birth_date: '1990-01-01', email: 'juan@example.com', phone: '123456789', created_at: '2025-10-01T09:00:00Z' },
@@ -13,6 +16,29 @@ const MOCK_ORDERS: Order[] = [
   { id: '101', order_code: 'MPE-001', client_id: '1', product_quantity: 10, destination_city: 'Madrid', delivery_date: '2025-10-10', status: 'processing', created_at: '2025-10-01T10:00:00Z' },
   { id: '102', order_code: 'MPE-002', client_id: '2', product_quantity: 5, destination_city: 'Bogotá', delivery_date: '2025-10-12', status: 'completed', created_at: '2025-10-02T11:00:00Z' }
 ];
+
+// Almacenes principales (se excluyen de la planificación)
+const WAREHOUSE_ICAO = new Set(["SPIM", "EBCI", "UBBB"]);
+
+// (Opcional) mapa ICAO -> Ciudad visible en UI
+const ICAO_TO_CITY: Record<string, string> = {
+  SPIM: "Lima",
+  EBCI: "Bruselas",
+  UBBB: "Baku",
+  // agrega más según tu lista de aeropuertos
+};
+
+// Regex exacto del formato
+const PEDIDO_RE = /^(\d{2})-(\d{2})-(\d{2})-([A-Z]{4})-(\d{3})-(\d{7})$/;
+
+// Validaciones de rango
+function isValidDay(dd: string)   { const v = +dd; return v >= 1 && v <= 31; }
+function isValidHour(hh: string)  { const v = +hh; return v >= 0 && v <= 23; }
+function isValidMin(mm: string)   { const v = +mm; return v >= 0 && v <= 59; }
+function isValidQty(q: string)    { const v = +q;  return v >= 1 && v <= 999; }
+
+
+
 
 let orderIdCounter = 103;
 let clientIdCounter = 4;
@@ -53,6 +79,53 @@ export default function Pedidos() {
       c.first_name.toLowerCase().includes(searchTerm.toLowerCase())
     ).slice(0, 12);
     setClients(filtered);
+  };
+
+  const [file, setFile] = useState<File|null>(null);
+  const [loading, setLoading] = useState(false);
+  const [resultado, setResultado] = useState<any>(null);
+
+  const onSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] ?? null);
+  };
+
+  const pollPlan = async (planId: string) => {
+    const t = setInterval(async () => {
+      const st = await getPlanStatus(planId); // RUNNING|COMPLETED|FAILED
+      if (st.status === 'COMPLETED') {
+        clearInterval(t);
+        const data = await getPlanResultado(planId);
+        setResultado(data);
+      }
+      if (st.status === 'FAILED') {
+        clearInterval(t);
+        alert('La planificación falló');
+      }
+    }, 2500);
+  };
+
+  const onUploadAndPlan = async () => {
+    if (!file) { alert('Selecciona un TXT'); return; }
+    setLoading(true);
+    try {
+      const txt = await file.text();
+      const pedidos = pasarPedidos(txt);
+      if (!pedidos.length) { alert('Archivo sin pedidos válidos'); return; }
+      else alert('Se cargaron ' + pedidos.length + ' pedidos'); 
+      const resp = await planificarConPedidos(pedidos /*, { simulate: false }*/);
+
+      // Si tu back es async: resp = { planId, status }
+      if (resp.planId) {
+        await pollPlan(resp.planId);
+      } else {
+        // Si tu back devuelve solución al toque:
+        setResultado(resp);
+      }
+    } catch (e:any) {
+      alert(e.message || 'Error al planificar');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRegisterClient = () => {
@@ -116,44 +189,6 @@ export default function Pedidos() {
     alert('Pedido registrado exitosamente');
   };
 
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const newOrders: Order[] = [];
-        for (const row of results.data as any[]) {
-          if (
-            row.order_code &&
-            row.client_id &&
-            row.product_quantity &&
-            row.destination_city &&
-            row.delivery_date
-          ) {
-            newOrders.push({
-              id: String(orderIdCounter++),
-              order_code: row.order_code,
-              client_id: row.client_id,
-              product_quantity: parseInt(row.product_quantity),
-              destination_city: row.destination_city,
-              delivery_date: row.delivery_date,
-              status: row.status || 'processing',
-              created_at: new Date().toISOString(),
-            });
-          }
-        }
-        MOCK_ORDERS.unshift(...newOrders);
-        loadOrders();
-        alert(`Se han registrado ${newOrders.length} pedidos desde el archivo CSV`);
-      },
-      error: () => {
-        alert('Error al procesar el archivo CSV');
-      },
-    });
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -301,22 +336,18 @@ export default function Pedidos() {
             <div className="bg-white rounded-2xl shadow-lg p-6 mt-6">
               <div className="flex items-center gap-3 mb-6">
                 <Package className="w-6 h-6 text-[#0066FF]" />
-                <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV)</h2>
+                <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV/TXT)</h2>
               </div>
               <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col items-center justify-center bg-blue-50">
                 <input
                   type="file"
-                  accept=".csv"
-                  onChange={handleCSVUpload}
+                  accept=".csv,.txt"
+                  onChange={onSelect}
                   className="mb-4"
                 />
-                <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV con los pedidos</span>
-                <button
-                  className="px-6 py-3 bg-[#0066FF] text-white rounded-lg hover:bg-[#0052cc] font-medium"
-                  onClick={() => alert('Selecciona un archivo CSV para cargar pedidos')}
-                  disabled
-                >
-                  Cargar pedidos masivos
+                <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV/TXT con los pedidos</span>
+                <button onClick={onUploadAndPlan} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
+                  {loading ? 'Procesando...' : 'Cargar pedidos masivos'}
                 </button>
               </div>
             </div>
