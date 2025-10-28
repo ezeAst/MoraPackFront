@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import { Package, Clock, DollarSign } from 'lucide-react';
 import Papa from 'papaparse'; // Asegúrate de instalar papaparse: npm install papaparse
 import type { Order, Client, Route } from '../types';
+import { parsePedidosTxt } from '../utils/parsePedidosTxt';
+import { importarPedidos } from '../services/apiPedidos';
+
+
 
 const MOCK_CLIENTS: Client[] = [
   { id: '1', first_name: 'Juan', last_name: 'Pérez', birth_date: '1990-01-01', email: 'juan@example.com', phone: '123456789', created_at: '2025-10-01T09:00:00Z' },
@@ -13,6 +17,44 @@ const MOCK_ORDERS: Order[] = [
   { id: '101', order_code: 'MPE-001', client_id: '1', product_quantity: 10, destination_city: 'Madrid', delivery_date: '2025-10-10', status: 'processing', created_at: '2025-10-01T10:00:00Z' },
   { id: '102', order_code: 'MPE-002', client_id: '2', product_quantity: 5, destination_city: 'Bogotá', delivery_date: '2025-10-12', status: 'completed', created_at: '2025-10-02T11:00:00Z' }
 ];
+
+const MESES = [
+  { value: 1,  label: 'Enero' },
+  { value: 2,  label: 'Febrero' },
+  { value: 3,  label: 'Marzo' },
+  { value: 4,  label: 'Abril' },
+  { value: 5,  label: 'Mayo' },
+  { value: 6,  label: 'Junio' },
+  { value: 7,  label: 'Julio' },
+  { value: 8,  label: 'Agosto' },
+  { value: 9,  label: 'Setiembre' },
+  { value: 10, label: 'Octubre' },
+  { value: 11, label: 'Noviembre' },
+  { value: 12, label: 'Diciembre' },
+];
+
+// Almacenes principales (se excluyen de la planificación)
+const WAREHOUSE_ICAO = new Set(["SPIM", "EBCI", "UBBB"]);
+
+// (Opcional) mapa ICAO -> Ciudad visible en UI
+const ICAO_TO_CITY: Record<string, string> = {
+  SPIM: "Lima",
+  EBCI: "Bruselas",
+  UBBB: "Baku",
+  // agrega más según tu lista de aeropuertos
+};
+
+// Regex exacto del formato
+const PEDIDO_RE = /^(\d{2})-(\d{2})-(\d{2})-([A-Z]{4})-(\d{3})-(\d{7})$/;
+
+// Validaciones de rango
+function isValidDay(dd: string)   { const v = +dd; return v >= 1 && v <= 31; }
+function isValidHour(hh: string)  { const v = +hh; return v >= 0 && v <= 23; }
+function isValidMin(mm: string)   { const v = +mm; return v >= 0 && v <= 59; }
+function isValidQty(q: string)    { const v = +q;  return v >= 1 && v <= 999; }
+
+
+
 
 let orderIdCounter = 103;
 let clientIdCounter = 4;
@@ -54,6 +96,45 @@ export default function Pedidos() {
     ).slice(0, 12);
     setClients(filtered);
   };
+
+  const [file, setFile] = useState<File | null>(null);
+  const [mes, setMes] = useState<number | ''>('');
+  const [loading, setLoading] = useState(false);
+
+  const onSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] ?? null);
+  };
+
+
+  const onUpload = async () => {
+  if (!file) { alert('Selecciona un TXT'); return; }
+  if (!mes) { alert('Selecciona el mes'); return; }
+
+  setLoading(true);
+  try {
+    const txt = await file.text();
+    const mesNum = Number(mes);              // evita Number('') y ayuda a TS
+    const pedidos = parsePedidosTxt(txt, mesNum);
+
+    if (!pedidos.length) {
+      alert('No se encontraron pedidos válidos (o todos fueron excluidos).');
+      return;
+    }
+
+    const resp = await importarPedidos(pedidos);
+    alert(`Se cargaron ${resp.inserted ?? pedidos.length} pedidos`);
+
+    // limpiar file input
+    const inputEl = document.getElementById('file-pedidos') as HTMLInputElement | null;
+    if (inputEl) inputEl.value = '';
+    setFile(null);
+  } catch (e:any) {
+    alert(e.message || 'Error al importar pedidos');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleRegisterClient = () => {
     const newId = String(clientIdCounter++);
@@ -116,44 +197,6 @@ export default function Pedidos() {
     alert('Pedido registrado exitosamente');
   };
 
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const newOrders: Order[] = [];
-        for (const row of results.data as any[]) {
-          if (
-            row.order_code &&
-            row.client_id &&
-            row.product_quantity &&
-            row.destination_city &&
-            row.delivery_date
-          ) {
-            newOrders.push({
-              id: String(orderIdCounter++),
-              order_code: row.order_code,
-              client_id: row.client_id,
-              product_quantity: parseInt(row.product_quantity),
-              destination_city: row.destination_city,
-              delivery_date: row.delivery_date,
-              status: row.status || 'processing',
-              created_at: new Date().toISOString(),
-            });
-          }
-        }
-        MOCK_ORDERS.unshift(...newOrders);
-        loadOrders();
-        alert(`Se han registrado ${newOrders.length} pedidos desde el archivo CSV`);
-      },
-      error: () => {
-        alert('Error al procesar el archivo CSV');
-      },
-    });
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -299,24 +342,31 @@ export default function Pedidos() {
 
             {/* Card para carga masiva de pedidos */}
             <div className="bg-white rounded-2xl shadow-lg p-6 mt-6">
-              <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-center gap-3 mb-4">
                 <Package className="w-6 h-6 text-[#0066FF]" />
-                <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV)</h2>
+                <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV/TXT)</h2>
               </div>
-              <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col items-center justify-center bg-blue-50">
+              <div className="sm:col-span-1">
+                <label className="block text-sm font-medium mb-1">Mes de los pedidos</label>
+                <select
+                  className="w-full rounded border px-3 py-2"
+                  value={mes}
+                  onChange={(e) => setMes(Number(e.target.value))}
+                >
+                  <option className="mb-3" value="">-- Selecciona --</option>
+                  {MESES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col mt-2 items-center justify-center bg-blue-50">
                 <input
                   type="file"
-                  accept=".csv"
-                  onChange={handleCSVUpload}
+                  accept=".csv,.txt"
+                  onChange={onSelect}
                   className="mb-4"
                 />
-                <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV con los pedidos</span>
-                <button
-                  className="px-6 py-3 bg-[#0066FF] text-white rounded-lg hover:bg-[#0052cc] font-medium"
-                  onClick={() => alert('Selecciona un archivo CSV para cargar pedidos')}
-                  disabled
-                >
-                  Cargar pedidos masivos
+                <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV/TXT con los pedidos</span>
+                <button onClick={onUpload} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
+                  {loading ? 'Procesando...' : 'Cargar pedidos masivos'}
                 </button>
               </div>
             </div>
