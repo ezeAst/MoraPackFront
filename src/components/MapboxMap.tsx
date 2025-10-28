@@ -58,6 +58,7 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
         <Map
         ref={mapRef}
         mapboxAccessToken={MAPBOX_TOKEN || ''}
+        attributionControl={false}
         initialViewState={{
             longitude: 4.3517,
             latitude: 30,

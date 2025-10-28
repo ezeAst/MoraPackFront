@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   Play, Pause, Square, Download,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Info
 } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
 import * as api from '../services/api';
+import { CONTINENT_COLORS } from '../utils/colors';
 
 export default function Simulacion() {
   const [selectedScenario, setSelectedScenario] = useState<'weekly' | 'stress_test'>('weekly');
@@ -25,9 +26,22 @@ export default function Simulacion() {
   const [currentTime, setCurrentTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  //estado para almacenar el mapeo de códigos IATA a nombres de aeropuertos
+
+  // Mapeo de aeropuertos -> continente (por código y por nombre)
   const [airportsByCode, setAirportsByCode] = useState<Record<string, string>>({});
   const [airportsByName, setAirportsByName] = useState<Record<string, string>>({});
+
+  // === Leyenda (mostrar/ocultar) y filtros de visibilidad ===
+  const [showLegend, setShowLegend] = useState(false);
+  const [legend, setLegend] = useState({
+    warehouses: true,
+    planes: true,
+    routes: true,
+    // Filtros por origen
+    america: true,
+    europa: true,
+    asia: true,
+  });
 
   // Polling para actualizar estado
   useEffect(() => {
@@ -36,29 +50,24 @@ export default function Simulacion() {
     const interval = setInterval(async () => {
       try {
         const status = await api.getSimulationStatus(simulationId);
-        
-        // Actualizar solo vuelos activos (los que están en el aire)
+
         setFlights(status.activeFlights);
         setWarehouses(status.warehouses);
         setMetrics(status.metrics);
-        setEvents(status.recentEvents.slice(0, 5)); // Últimos 5 eventos
+        setEvents(status.recentEvents.slice(0, 5));
         setProgress(status.progressPercentage);
         setCurrentTime(status.currentDateTime);
 
-        // Si llegó al 100%, detener
-        if (status.progressPercentage >= 100) {
-          setIsRunning(false);
-        }
+        if (status.progressPercentage >= 100) setIsRunning(false);
       } catch (err) {
         console.error('Error al obtener estado:', err);
       }
-    }, 1500); // Polling cada 1.5 segundos
+    }, 1500);
 
     return () => clearInterval(interval);
   }, [simulationId, isRunning]);
 
-
-  //carga incial de colores de aeropuertos
+  // Carga inicial de aeropuertos -> continente
   useEffect(() => {
     (async () => {
       try {
@@ -74,11 +83,10 @@ export default function Simulacion() {
       } catch (e) {
         console.warn('No se pudieron cargar aeropuertos para colorear rutas:', e);
       }
-      })();
+    })();
   }, []);
 
-
-  //lógica de colores de rutas según continente
+  // Color de ruta según continente de origen
   const getRouteColor = (flight: api.Flight): string => {
     const continentRaw =
       airportsByCode[flight.origin] ||
@@ -89,17 +97,66 @@ export default function Simulacion() {
       .replace(/\p{Diacritic}/gu, '')
       .toLowerCase();
 
-    if (continent.includes('america')) return '#00CFFF';    // celeste
+    if (continent.includes('america')) return '#00CFFF';                 // celeste
     if (continent.includes('europa') || continent.includes('europe')) return '#6F42C1'; // morado
-    if (continent.includes('asia')) return '#FF7A00';       // anaranjado
-    return '#6B7280'; // gris por defecto
+    if (continent.includes('asia')) return '#FF7A00';                    // naranja
+    return '#6B7280';                                                    // gris
   };
 
+  // === Helpers de ocupación (aviones) ===
+  // Devuelve carga actual y capacidad, tolerando distintos nombres que pueda traer el backend.
+  const getFlightCapacityInfo = (f: any) => {
+    // intenta varias convenciones comunes
+    const capacity =
+      f.capacity ?? f.maxCapacity ?? f.capacityKg ?? f.maxPackages ?? f.planeCapacity ?? 0;
+    const current =
+      f.current ?? f.load ?? f.currentLoad ?? f.occupied ?? f.packages ?? f.packagesWeight ?? 0;
+
+    return { current: Number(current) || 0, capacity: Number(capacity) || 0 };
+  };
+
+  const getCapacityColor = (pct: number) => {
+    if (pct < 70) return '#22c55e';     // verde
+    if (pct <= 90) return '#eab308';    // amarillo
+    return '#ef4444';                   // rojo
+  };
+
+  // devuelve el color para el avión y su % (si se pudo calcular)
+  const getPlaneColorAndPct = (f: api.Flight) => {
+    const { current, capacity } = getFlightCapacityInfo(f);
+    if (capacity > 0) {
+      const pct = (current / capacity) * 100;
+      return { color: getCapacityColor(pct), pct, current, capacity };
+    }
+    // fallback si no hay datos
+    return {
+      color: f.status === 'in_flight' ? '#FF6600' : '#94a3b8',
+      pct: undefined as number | undefined,
+      current: undefined as number | undefined,
+      capacity: undefined as number | undefined,
+    };
+  };
+
+  // Coincidencia de vuelo con filtros de origen (para rutas y aviones)
+  const flightMatchesOriginFilter = (f: api.Flight) => {
+    const raw =
+      airportsByCode[f.origin] ||
+      airportsByName[f.origin] ||
+      '';
+    const origin = raw
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase();
+
+    if (origin.includes('america')) return legend.america;
+    if (origin.includes('europa') || origin.includes('europe')) return legend.europa;
+    if (origin.includes('asia')) return legend.asia;
+    return true; // otros/indefinidos
+  };
 
   const handleStartSimulation = async () => {
     setLoading(true);
     setError(null);
-
     try {
       const response = await api.createSimulation({
         type: selectedScenario,
@@ -108,12 +165,11 @@ export default function Simulacion() {
         tamanoRcl: 3
       });
 
-      setSimulationId(response.simulationId);
-      setWarehouses(response.warehouses);
-      setIsRunning(true);
-      setShowControlView(true);
-      setProgress(0);
-      
+        setSimulationId(response.simulationId);
+        setWarehouses(response.warehouses);
+        setIsRunning(true);
+        setShowControlView(true);
+        setProgress(0);
     } catch (err: any) {
       setError(err.message || 'Error al crear la simulación');
       console.error('Error:', err);
@@ -155,7 +211,7 @@ export default function Simulacion() {
     }
   };
 
-  // Convertir warehouses a formato del mapa
+  // Warehouses para el mapa
   const warehousesForMap = warehouses.map(w => ({
     name: w.name,
     lat: w.lat,
@@ -165,8 +221,11 @@ export default function Simulacion() {
     current: w.current,
   }));
 
-  // Convertir routes para el mapa (solo si hay vuelos activos)
-  const routesForMap = flights.map(f => ({
+  // Vuelos filtrados por origen (afecta rutas y aviones)
+  const filteredFlights = flights.filter(flightMatchesOriginFilter);
+
+  // Rutas para el mapa (solo de vuelos filtrados)
+  const routesForMap = filteredFlights.map(f => ({
     id: f.id,
     coordinates: f.route,
     color: getRouteColor(f)
@@ -330,35 +389,155 @@ export default function Simulacion() {
             </div>
 
             <div className="relative h-[70vh] min-h-[520px] bg-gray-200">
-              <MapboxMap warehouses={warehousesForMap} routes={routesForMap}>
-                {/* Vuelos en tiempo real desde el backend */}
-                {flights.map(flight => (
-                  <Marker 
-                    key={flight.id} 
-                    longitude={flight.currentLng} 
-                    latitude={flight.currentLat}
-                  >
-                    <div className="relative group">
-                      <svg width="28" height="28" viewBox="0 0 24 24" className="drop-shadow-lg">
-                        <path
-                          d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
-                          fill={flight.status === 'in_flight' ? '#FF6600' : '#94a3b8'}
-                          transform="rotate(45 12 12)"
-                        />
-                      </svg>
-                      {/* Tooltip */}
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                        <div className="font-semibold">{flight.flightCode}</div>
-                        <div>{flight.origin} → {flight.destination}</div>
-                        <div>{Math.round(flight.progressPercentage)}% completado</div>
-                        <div>{flight.packages} paquetes</div>
+              <MapboxMap
+                warehouses={legend.warehouses ? warehousesForMap : []}
+                routes={legend.routes ? routesForMap : []}
+              >
+                {/* Vuelos en tiempo real (filtrados por origen) */}
+                {legend.planes && filteredFlights.map(flight => {
+                  const pc = getPlaneColorAndPct(flight);
+                  const fillColor = pc.color;
+
+                  return (
+                    <Marker
+                      key={flight.id}
+                      longitude={flight.currentLng}
+                      latitude={flight.currentLat}
+                    >
+                      <div className="relative group">
+                        <svg width="28" height="28" viewBox="0 0 24 24" className="drop-shadow-lg">
+                          <path
+                            d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
+                            fill={fillColor}
+                            transform="rotate(45 12 12)"
+                          />
+                        </svg>
+                        {/* Tooltip */}
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                          <div className="font-semibold">{flight.flightCode}</div>
+                          <div>{flight.origin} → {flight.destination}</div>
+                          <div>{Math.round(flight.progressPercentage)}% completado</div>
+                          <div>{flight.packages} paquetes</div>
+                          {typeof pc.pct === 'number' && (
+                            <div>Carga: {Math.round(pc.pct)}%{(pc.current ?? undefined) !== undefined && (pc.capacity ?? undefined) !== undefined ? ` (${pc.current}/${pc.capacity})` : ''}</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </Marker>
-                ))}
+                    </Marker>
+                  );
+                })}
               </MapboxMap>
 
-              <div className="absolute left-0 right-0 bottom-0 text-xs md:text-sm text-gray-700 flex justify-between px-4 py-2 bg-white/80 backdrop-blur border-t">
+              {/* Botón de Leyenda: solo ícono */}
+              <div className="fixed left-3 bottom-3 z-30">
+                <button
+                  onClick={() => setShowLegend(s => !s)}
+                  className="flex items-center justify-center rounded-full w-10 h-10 bg-white/90 shadow border hover:bg-white"
+                  aria-label="Alternar leyenda"
+                  title="Leyenda"
+                >
+                  <Info size={18} />
+                </button>
+
+                {showLegend && (
+                  <div className="mt-2 p-3 rounded-xl bg-white/95 shadow border min-w-[260px]">
+                    {/* Capacidad */}
+                    <div className="text-xs font-semibold mb-2">Capacidad</div>
+                    <ul className="text-sm space-y-1">
+                      <li>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{background:'#22c55e'}} />
+                        {'< 70% capacidad'}
+                      </li>
+                      <li>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{background:'#eab308'}} />
+                        {'70–90% capacidad'}
+                      </li>
+                      <li>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{background:'#ef4444'}} />
+                        {'> 90% capacidad'}
+                      </li>
+                    </ul>
+
+                    {/* Origen de rutas (colores) */}
+                    <div className="text-xs font-semibold mt-3 mb-2">Rutas (origen)</div>
+                    <ul className="text-sm space-y-1">
+                      <li>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{background: CONTINENT_COLORS.America}} />
+                        América
+                      </li>
+                      <li>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{background: CONTINENT_COLORS.Europa}} />
+                        Europa
+                      </li>
+                      <li>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{background: CONTINENT_COLORS.Asia}} />
+                        Asia
+                      </li>
+                    </ul>
+
+                    {/* Filtros por origen */}
+                    <div className="text-xs font-semibold mt-3 mb-2">Filtrar rutas por origen</div>
+                    <div className="flex flex-col gap-1 text-sm">
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={legend.america}
+                          onChange={e => setLegend(s => ({ ...s, america: e.target.checked }))}
+                        />
+                        América
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={legend.europa}
+                          onChange={e => setLegend(s => ({ ...s, europa: e.target.checked }))}
+                        />
+                        Europa
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={legend.asia}
+                          onChange={e => setLegend(s => ({ ...s, asia: e.target.checked }))}
+                        />
+                        Asia
+                      </label>
+                    </div>
+
+                    {/* Toggles de visibilidad */}
+                    <div className="text-xs font-semibold mt-3 mb-2">Mostrar</div>
+                    <div className="flex flex-wrap gap-3 text-sm">
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={legend.warehouses}
+                          onChange={e => setLegend(s => ({...s, warehouses: e.target.checked}))}
+                        />
+                        Almacenes
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={legend.planes}
+                          onChange={e => setLegend(s => ({...s, planes: e.target.checked}))}
+                        />
+                        Aviones
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={legend.routes}
+                          onChange={e => setLegend(s => ({...s, routes: e.target.checked}))}
+                        />
+                        Rutas
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Barra inferior: padding-left para que no la tape el botón */}
+              <div className="absolute left-0 right-0 bottom-0 text-xs md:text-sm text-gray-700 flex justify-between px-4 pl-12 py-2 bg-white/80 backdrop-blur border-t">
                 <span>Progreso: {progress.toFixed(1)}%</span>
                 <span>Hora simulada: {currentTime}</span>
               </div>
@@ -383,19 +562,6 @@ export default function Simulacion() {
                         <p className="text-gray-700"><span className="font-semibold">Paquetes pendientes:</span> {metrics.packagesPending}</p>
                         <p className="text-gray-700"><span className="font-semibold">Tasa de éxito:</span> {metrics.successRate.toFixed(1)}%</p>
                         <p className="text-gray-700"><span className="font-semibold">Violaciones:</span> {metrics.warehouseViolations + metrics.flightViolations}</p>
-                      </div>
-                    </>
-                  )}
-
-                  {events.length > 0 && (
-                    <>
-                      <h3 className="text-lg font-bold text-gray-800 mb-3">Eventos recientes</h3>
-                      <div className="space-y-2 mb-6">
-                        {events.map((event, i) => (
-                          <div key={i} className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-gray-700">
-                            {event.message}
-                          </div>
-                        ))}
                       </div>
                     </>
                   )}

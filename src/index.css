@@ -6,3 +6,8 @@
 /* Leaflet styles (for backward compatibility if needed) */
 .leaflet-container img { max-width:none !important; }
 .leaflet-container { width:100% !important; height:100% !important; }
+
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-attrib {
+  display: none !important;
+}
