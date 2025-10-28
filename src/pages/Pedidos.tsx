@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Package, Clock, DollarSign } from 'lucide-react';
 import Papa from 'papaparse'; // Asegúrate de instalar papaparse: npm install papaparse
 import type { Order, Client, Route } from '../types';
-import { pasarPedidos } from '../utils/pasarPedidos';
-import { planificarConPedidos, getPlanResultado, getPlanStatus } from '../services/apiPlanificacion';
+import { parsePedidosTxt } from '../utils/parsePedidosTxt';
+import { importarPedidos } from '../services/apiPedidos';
+
 
 
 const MOCK_CLIENTS: Client[] = [
@@ -15,6 +16,21 @@ const MOCK_CLIENTS: Client[] = [
 const MOCK_ORDERS: Order[] = [
   { id: '101', order_code: 'MPE-001', client_id: '1', product_quantity: 10, destination_city: 'Madrid', delivery_date: '2025-10-10', status: 'processing', created_at: '2025-10-01T10:00:00Z' },
   { id: '102', order_code: 'MPE-002', client_id: '2', product_quantity: 5, destination_city: 'Bogotá', delivery_date: '2025-10-12', status: 'completed', created_at: '2025-10-02T11:00:00Z' }
+];
+
+const MESES = [
+  { value: 1,  label: 'Enero' },
+  { value: 2,  label: 'Febrero' },
+  { value: 3,  label: 'Marzo' },
+  { value: 4,  label: 'Abril' },
+  { value: 5,  label: 'Mayo' },
+  { value: 6,  label: 'Junio' },
+  { value: 7,  label: 'Julio' },
+  { value: 8,  label: 'Agosto' },
+  { value: 9,  label: 'Setiembre' },
+  { value: 10, label: 'Octubre' },
+  { value: 11, label: 'Noviembre' },
+  { value: 12, label: 'Diciembre' },
 ];
 
 // Almacenes principales (se excluyen de la planificación)
@@ -81,52 +97,44 @@ export default function Pedidos() {
     setClients(filtered);
   };
 
-  const [file, setFile] = useState<File|null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [mes, setMes] = useState<number | ''>('');
   const [loading, setLoading] = useState(false);
-  const [resultado, setResultado] = useState<any>(null);
 
   const onSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFile(e.target.files?.[0] ?? null);
   };
 
-  const pollPlan = async (planId: string) => {
-    const t = setInterval(async () => {
-      const st = await getPlanStatus(planId); // RUNNING|COMPLETED|FAILED
-      if (st.status === 'COMPLETED') {
-        clearInterval(t);
-        const data = await getPlanResultado(planId);
-        setResultado(data);
-      }
-      if (st.status === 'FAILED') {
-        clearInterval(t);
-        alert('La planificación falló');
-      }
-    }, 2500);
-  };
 
-  const onUploadAndPlan = async () => {
-    if (!file) { alert('Selecciona un TXT'); return; }
-    setLoading(true);
-    try {
-      const txt = await file.text();
-      const pedidos = pasarPedidos(txt);
-      if (!pedidos.length) { alert('Archivo sin pedidos válidos'); return; }
-      else alert('Se cargaron ' + pedidos.length + ' pedidos'); 
-      const resp = await planificarConPedidos(pedidos /*, { simulate: false }*/);
+  const onUpload = async () => {
+  if (!file) { alert('Selecciona un TXT'); return; }
+  if (!mes) { alert('Selecciona el mes'); return; }
 
-      // Si tu back es async: resp = { planId, status }
-      if (resp.planId) {
-        await pollPlan(resp.planId);
-      } else {
-        // Si tu back devuelve solución al toque:
-        setResultado(resp);
-      }
-    } catch (e:any) {
-      alert(e.message || 'Error al planificar');
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const txt = await file.text();
+    const mesNum = Number(mes);              // evita Number('') y ayuda a TS
+    const pedidos = parsePedidosTxt(txt, mesNum);
+
+    if (!pedidos.length) {
+      alert('No se encontraron pedidos válidos (o todos fueron excluidos).');
+      return;
     }
-  };
+
+    const resp = await importarPedidos(pedidos);
+    alert(`Se cargaron ${resp.inserted ?? pedidos.length} pedidos`);
+
+    // limpiar file input
+    const inputEl = document.getElementById('file-pedidos') as HTMLInputElement | null;
+    if (inputEl) inputEl.value = '';
+    setFile(null);
+  } catch (e:any) {
+    alert(e.message || 'Error al importar pedidos');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleRegisterClient = () => {
     const newId = String(clientIdCounter++);
@@ -334,11 +342,22 @@ export default function Pedidos() {
 
             {/* Card para carga masiva de pedidos */}
             <div className="bg-white rounded-2xl shadow-lg p-6 mt-6">
-              <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-center gap-3 mb-4">
                 <Package className="w-6 h-6 text-[#0066FF]" />
                 <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV/TXT)</h2>
               </div>
-              <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col items-center justify-center bg-blue-50">
+              <div className="sm:col-span-1">
+                <label className="block text-sm font-medium mb-1">Mes de los pedidos</label>
+                <select
+                  className="w-full rounded border px-3 py-2"
+                  value={mes}
+                  onChange={(e) => setMes(Number(e.target.value))}
+                >
+                  <option className="mb-3" value="">-- Selecciona --</option>
+                  {MESES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col mt-2 items-center justify-center bg-blue-50">
                 <input
                   type="file"
                   accept=".csv,.txt"
@@ -346,7 +365,7 @@ export default function Pedidos() {
                   className="mb-4"
                 />
                 <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV/TXT con los pedidos</span>
-                <button onClick={onUploadAndPlan} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
+                <button onClick={onUpload} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
                   {loading ? 'Procesando...' : 'Cargar pedidos masivos'}
                 </button>
               </div>
