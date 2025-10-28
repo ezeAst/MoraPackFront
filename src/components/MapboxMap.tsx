@@ -9,6 +9,8 @@ type Warehouse = {
   lat: number;
   lng: number;
   status: 'normal' | 'warning' | 'critical';
+  capacity?: number;
+  current?: number;
 };
 
 type Route = {
@@ -99,8 +101,9 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
               style={{ backgroundColor: getWarehouseColor(warehouse.status) }}
             />
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              {warehouse.name}
+              {warehouse.name}{typeof warehouse.capacity === 'number' && typeof warehouse.current === 'number' ? ` — ${warehouse.current}/${warehouse.capacity}` : ''}
             </div>
+
           </div>
         </Marker>
       ))}

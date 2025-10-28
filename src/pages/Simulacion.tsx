@@ -25,6 +25,9 @@ export default function Simulacion() {
   const [currentTime, setCurrentTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  //estado para almacenar el mapeo de códigos IATA a nombres de aeropuertos
+  const [airportsByCode, setAirportsByCode] = useState<Record<string, string>>({});
+  const [airportsByName, setAirportsByName] = useState<Record<string, string>>({});
 
   // Polling para actualizar estado
   useEffect(() => {
@@ -53,6 +56,45 @@ export default function Simulacion() {
 
     return () => clearInterval(interval);
   }, [simulationId, isRunning]);
+
+
+  //carga incial de colores de aeropuertos
+  useEffect(() => {
+    (async () => {
+      try {
+        const aeropuertos = await api.getAeropuertos();
+        const map: Record<string, string> = {};
+        const mapByName: Record<string, string> = {};
+        aeropuertos.forEach(a => {
+          map[a.codigo] = a.continente;
+          mapByName[a.nombre] = a.continente;
+        });
+        setAirportsByCode(map);
+        setAirportsByName(mapByName);
+      } catch (e) {
+        console.warn('No se pudieron cargar aeropuertos para colorear rutas:', e);
+      }
+      })();
+  }, []);
+
+
+  //lógica de colores de rutas según continente
+  const getRouteColor = (flight: api.Flight): string => {
+    const continentRaw =
+      airportsByCode[flight.origin] ||
+      airportsByName[flight.origin] ||
+      '';
+    const continent = continentRaw
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase();
+
+    if (continent.includes('america')) return '#00CFFF';    // celeste
+    if (continent.includes('europa') || continent.includes('europe')) return '#6F42C1'; // morado
+    if (continent.includes('asia')) return '#FF7A00';       // anaranjado
+    return '#6B7280'; // gris por defecto
+  };
+
 
   const handleStartSimulation = async () => {
     setLoading(true);
@@ -118,14 +160,16 @@ export default function Simulacion() {
     name: w.name,
     lat: w.lat,
     lng: w.lng,
-    status: w.status as 'normal' | 'warning' | 'critical'
+    status: w.status as 'normal' | 'warning' | 'critical',
+    capacity: w.capacity,
+    current: w.current,
   }));
 
   // Convertir routes para el mapa (solo si hay vuelos activos)
   const routesForMap = flights.map(f => ({
     id: f.id,
     coordinates: f.route,
-    color: '#FF6600'
+    color: getRouteColor(f)
   }));
 
   return (
