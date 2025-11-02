@@ -54,7 +54,7 @@ export default function Simulacion() {
         setFlights(status.activeFlights);
         setWarehouses(status.warehouses);
         setMetrics(status.metrics);
-        setEvents(status.recentEvents.slice(0, 5));
+        setEvents(status.recentEvents.slice(0, 10));
         setProgress(status.progressPercentage);
         setCurrentTime(status.currentDateTime);
 
@@ -570,11 +570,29 @@ export default function Simulacion() {
                     <>
                       <h3 className="text-lg font-bold text-gray-800 mb-3">Eventos recientes</h3>
                       <div className="space-y-2 mb-6">
-                        {events.map((event, i) => (
-                          <div key={i} className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-gray-700">
+                        {events.map((event, i) => {
+                        // Determinar el color del fondo según el tipo de evento
+                        let bgColorClass = '';
+                        switch (event.type) {
+                          case 'ORDER_RECEIVED':
+                            bgColorClass = 'bg-green-50 border-green-200';
+                            break;
+                          case 'ORDER_DELIVERED':
+                            bgColorClass = 'bg-purple-50 border-purple-200';
+                            break;
+                          case 'WAREHOUSE_WARNING':
+                            bgColorClass = 'bg-red-50 border-red-200';
+                            break;
+                          default:
+                            bgColorClass = 'bg-blue-50 border-blue-200';
+                        }
+
+                        return (
+                          <div key={i} className={`p-3 ${bgColorClass} border rounded-lg text-xs text-gray-700`}>
                             {event.message}
                           </div>
-                        ))}
+                        );
+                      })}
                       </div>
                     </>
                   )}

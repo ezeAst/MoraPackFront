@@ -56,9 +56,10 @@ export interface SimulationMetrics {
 
 export interface SimulationEvent {
   message: string;
-  type: 'FLIGHT_DEPARTED' | 'FLIGHT_ARRIVED' | 'WAREHOUSE_WARNING';
+  type: 'FLIGHT_DEPARTED' | 'FLIGHT_ARRIVED' | 'WAREHOUSE_WARNING' | 'ORDER_RECEIVED' | 'ORDER_DELIVERED';
   simulatedSeconds: number;
   timestamp: string;
+  orderId?: string;
 }
 
 export interface CreateSimulationRequest {
@@ -80,6 +81,19 @@ export interface CreateSimulationResponse {
   estimatedDurationSeconds: number;
 }
 
+export interface OrderSnapshot {
+  orderId: string;
+  destinationAirport: string;
+  status: 'pending' | 'in_transit' | 'delivered';
+  clientId: string;
+  day: number;
+  hour: number;
+  minute: number;
+  arrivalTime?: string;
+  deliveryTime?: string;
+  progressPercentage: number;
+}
+
 export interface SimulationStatusResponse {
   elapsedSeconds: number;
   progressPercentage: number;
@@ -92,6 +106,8 @@ export interface SimulationStatusResponse {
   metrics: SimulationMetrics;
   recentEvents: SimulationEvent[];
   currentDateTime: string;
+  activeOrders: OrderSnapshot[];
+  recentlyDeliveredOrders: OrderSnapshot[];
 }
 
 export interface ControlSimulationRequest {
