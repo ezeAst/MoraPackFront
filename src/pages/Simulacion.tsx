@@ -336,8 +336,8 @@ export default function Simulacion() {
           </div>
         </div>
       ) : (
-        <div className="p-6">
-          <div className="mx-auto max-w-[1400px] bg-white rounded-2xl shadow-lg overflow-hidden relative">
+        <div className="p-0">
+          <div className="mx-auto bg-white shadow-lg overflow-hidden relative">
             <div style={{ height: showTopBar ? 96 : 28 }} />
 
             <div
@@ -388,7 +388,7 @@ export default function Simulacion() {
               </div>
             </div>
 
-            <div className="relative h-[70vh] min-h-[520px] bg-gray-200">
+            <div className="relative h-[calc(100vh-73px)] bg-gray-200">
               <MapboxMap
                 warehouses={legend.warehouses ? warehousesForMap : []}
                 routes={legend.routes ? routesForMap : []}
@@ -542,8 +542,8 @@ export default function Simulacion() {
                 <span>Hora simulada: {currentTime}</span>
               </div>
 
-              <div className={`absolute top-6 right-0 h-[calc(100%-3rem)] transition-transform duration-200 ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}`}>
-                <div className="bg-white rounded-l-2xl shadow-xl w-[360px] h-full p-6 overflow-y-auto">
+              <div className={`absolute top-0 right-0 h-full transition-transform duration-200 ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div className="bg-white shadow-xl w-[360px] h-full p-6 overflow-y-auto">
                   <div className="mb-4">
                     <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
                       Estado: {isRunning ? 'en ejecución' : 'pausado'}

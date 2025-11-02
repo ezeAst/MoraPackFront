@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, Bell, Info } from 'lucide-react';
+import { BarChart3, Bell } from 'lucide-react';
 import MapboxMap from '../components/MapboxMap';
 
 type Status = 'normal' | 'warning' | 'critical';
@@ -20,7 +20,7 @@ type Route = {
 export default function Dashboard() {
   const [showStats, setShowStats] = useState(true);
   const [showAlerts, setShowAlerts] = useState(true);
-  const [showLegend, setShowLegend] = useState(true);
+  const [showLegend, setShowLegend] = useState(false);
 
   const stats = [
     { label: 'Vuelos activos', value: '24' },
@@ -82,24 +82,22 @@ export default function Dashboard() {
           >
             {showAlerts ? 'Ocultar alertas' : 'Mostrar alertas'}
           </button>
+          <button
+            onClick={() => setShowLegend(v => !v)}
+            className="bg-white text-[#FF6600] px-4 py-2 rounded-lg font-medium shadow hover:bg-gray-100"
+          >
+            {showLegend ? 'Ocultar leyenda' : 'Mostrar leyenda'}
+          </button>
         </div>
       </div>
 
-      {/* Card principal centrada */}
-      <div className="mx-auto max-w-[1400px] px-4 py-6">
-        <div className="relative bg-white rounded-2xl shadow-lg overflow-hidden">
-          {/* Alto grande pero no full-screen */}
-          <div className="relative h-[68vh] min-h-[520px] bg-gray-200">
+      {/* Contenedor principal: usar todo el ancho */}
+      <div className="mx-auto p-0">
+        <div className="relative bg-white shadow-lg overflow-hidden">
+          {/* Mapa: ocupar todo el alto disponible menos el header */}
+          <div className="relative h-[calc(100vh-97px)] bg-gray-200">
             {/* Mapa Mapbox */}
             <MapboxMap warehouses={warehouses} routes={routes} />
-
-            {/* Botón leyenda */}
-            <button
-              onClick={() => setShowLegend(v => !v)}
-              className="absolute bottom-4 right-4 z-30 bg-[#FF6600] text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-[#e55d00]"
-            >
-              <Info className="w-6 h-6" />
-            </button>
 
             {/* Leyenda overlay */}
             {showLegend && (

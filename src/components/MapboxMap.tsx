@@ -54,6 +54,9 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
     }
   };
 
+  // Lista de ciudades que deben mostrar el icono de almacén
+  const warehouseIconCities = ['Baku', 'Bruselas', 'Lima'];
+
   return (
         <Map
         ref={mapRef}
@@ -97,14 +100,27 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
           latitude={warehouse.lat}
         >
           <div className="relative group">
-            <div
-              className="w-6 h-6 rounded-full border-2 border-white shadow-lg cursor-pointer transition-transform hover:scale-125"
-              style={{ backgroundColor: getWarehouseColor(warehouse.status) }}
-            />
+            {warehouseIconCities.includes(warehouse.name) ? (
+              // Icono de almacén para las ciudades especificadas
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                className="cursor-pointer transition-transform hover:scale-125"
+                style={{ fill: getWarehouseColor(warehouse.status) }}
+              >
+                <path d="M12 3L2 9v12h20V9L12 3zm0 2.21l6 3.6v1.2h-12v-1.2l6-3.6zM4 19v-8h16v8H4zm2-6h12v4H6v-4z"/>
+              </svg>
+            ) : (
+              // Punto circular para el resto de las ciudades
+              <div
+                className="w-6 h-6 rounded-full border-2 border-white shadow-lg cursor-pointer transition-transform hover:scale-125"
+                style={{ backgroundColor: getWarehouseColor(warehouse.status) }}
+              />
+            )}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
               {warehouse.name}{typeof warehouse.capacity === 'number' && typeof warehouse.current === 'number' ? ` — ${warehouse.current}/${warehouse.capacity}` : ''}
             </div>
-
           </div>
         </Marker>
       ))}
