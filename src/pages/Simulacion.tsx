@@ -566,6 +566,19 @@ export default function Simulacion() {
                     </>
                   )}
 
+                  {events.length > 0 && (
+                    <>
+                      <h3 className="text-lg font-bold text-gray-800 mb-3">Eventos recientes</h3>
+                      <div className="space-y-2 mb-6">
+                        {events.map((event, i) => (
+                          <div key={i} className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-gray-700">
+                            {event.message}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
                   <button className="w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center justify-center gap-2">
                     <Download className="w-5 h-5" /> Exportar
                   </button>
