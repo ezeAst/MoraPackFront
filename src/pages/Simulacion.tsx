@@ -406,11 +406,25 @@ export default function Simulacion() {
                     >
                       <div className="relative group">
                         <svg width="28" height="28" viewBox="0 0 24 24" className="drop-shadow-lg">
-                          <path
-                            d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
-                            fill={fillColor}
-                            transform="rotate(45 12 12)"
-                          />
+                          {(() => {
+                            // Obtener coordenadas de la ruta
+                            const [origin, destination] = flight.route;
+                            
+                            // Calcular el ángulo entre el origen y destino
+                            // Math.atan2 devuelve el ángulo en radianes entre el eje x positivo y el punto dado
+                            const angle = Math.atan2(
+                              destination[1] - origin[1], // delta y (lat)
+                              destination[0] - origin[0]  // delta x (lng)
+                            ) * (180 / Math.PI); // convertir a grados
+
+                            return (
+                              <path
+                                d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
+                                fill={fillColor}
+                                transform={`rotate(${angle} 12 12)`}
+                              />
+                            );
+                          })()}
                         </svg>
                         {/* Tooltip */}
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
