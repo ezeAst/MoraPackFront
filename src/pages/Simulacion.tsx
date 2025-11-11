@@ -7,23 +7,32 @@ import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
 import * as api from '../services/api';
 import { CONTINENT_COLORS } from '../utils/colors';
+import { useSimulation } from '../contexts/SimulationContext';
 
 export default function Simulacion() {
-  const [selectedScenario, setSelectedScenario] = useState<'weekly' | 'stress_test'>('weekly');
-  const [startDateTime, setStartDateTime] = useState('');
+  // Usar el contexto en lugar de estados locales
+  const {
+    simulationId,
+    isRunning,
+    flights,
+    warehouses,
+    metrics,
+    events,
+    progress,
+    currentTime,
+    selectedScenario,
+    startDateTime,
+    setSelectedScenario,
+    setStartDateTime,
+    startSimulation,
+    pauseSimulation,
+    resumeSimulation,
+    stopSimulation,
+  } = useSimulation();
+
   const [showControlView, setShowControlView] = useState(false);
   const [showTopBar, setShowTopBar] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
-
-  // Estados de la simulación
-  const [simulationId, setSimulationId] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [flights, setFlights] = useState<api.Flight[]>([]);
-  const [warehouses, setWarehouses] = useState<api.Warehouse[]>([]);
-  const [metrics, setMetrics] = useState<api.SimulationMetrics | null>(null);
-  const [events, setEvents] = useState<api.SimulationEvent[]>([]);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,29 +52,12 @@ export default function Simulacion() {
     asia: true,
   });
 
-  // Polling para actualizar estado
+  // Mostrar vista de control si hay una simulación activa
   useEffect(() => {
-    if (!simulationId || !isRunning) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const status = await api.getSimulationStatus(simulationId);
-
-        setFlights(status.activeFlights);
-        setWarehouses(status.warehouses);
-        setMetrics(status.metrics);
-        setEvents(status.recentEvents.slice(0, 10));
-        setProgress(status.progressPercentage);
-        setCurrentTime(status.currentDateTime);
-
-        if (status.progressPercentage >= 100) setIsRunning(false);
-      } catch (err) {
-        console.error('Error al obtener estado:', err);
-      }
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, [simulationId, isRunning]);
+    if (simulationId) {
+      setShowControlView(true);
+    }
+  }, [simulationId]);
 
   // Carga inicial de aeropuertos -> continente
   useEffect(() => {
@@ -158,18 +150,13 @@ export default function Simulacion() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.createSimulation({
+      await startSimulation({
         type: selectedScenario,
         startTime: startDateTime || new Date().toISOString(),
         alphaGrasp: 0.3,
         tamanoRcl: 3
       });
-
-        setSimulationId(response.simulationId);
-        setWarehouses(response.warehouses);
-        setIsRunning(true);
-        setShowControlView(true);
-        setProgress(0);
+      setShowControlView(true);
     } catch (err: any) {
       setError(err.message || 'Error al crear la simulación');
       console.error('Error:', err);
@@ -181,8 +168,7 @@ export default function Simulacion() {
   const handlePause = async () => {
     if (!simulationId) return;
     try {
-      await api.controlSimulation(simulationId, 'pause');
-      setIsRunning(false);
+      await pauseSimulation();
     } catch (err) {
       console.error('Error al pausar:', err);
     }
@@ -191,8 +177,7 @@ export default function Simulacion() {
   const handleResume = async () => {
     if (!simulationId) return;
     try {
-      await api.controlSimulation(simulationId, 'resume');
-      setIsRunning(true);
+      await resumeSimulation();
     } catch (err) {
       console.error('Error al reanudar:', err);
     }
@@ -201,11 +186,8 @@ export default function Simulacion() {
   const handleStop = async () => {
     if (!simulationId) return;
     try {
-      await api.controlSimulation(simulationId, 'stop');
-      setIsRunning(false);
+      await stopSimulation();
       setShowControlView(false);
-      setSimulationId(null);
-      setFlights([]);
     } catch (err) {
       console.error('Error al detener:', err);
     }

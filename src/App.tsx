@@ -6,6 +6,7 @@ import Almacenes from './pages/Almacenes';
 import Vuelos from './pages/Vuelos';
 import Planificacion from './pages/Planificacion';
 import Simulacion from './pages/Simulacion';
+import { SimulationProvider } from './contexts/SimulationContext';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -30,10 +31,12 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
-      {renderPage()}
-    </div>
+    <SimulationProvider>
+      <div className="min-h-screen bg-gray-50">
+        <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+        {renderPage()}
+      </div>
+    </SimulationProvider>
   );
 }
 

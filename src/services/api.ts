@@ -225,3 +225,103 @@ export async function getAeropuertoByCodigo(
 
   return response.json();
 }
+
+/**
+ * Obtiene el conteo total de aeropuertos
+ */
+export async function getAeropuertosCount(): Promise<{ total: number }> {
+  const response = await fetch(`${API_BASE_URL}/aeropuertos/count`);
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Obtiene un aeropuerto por ID
+ */
+export async function getAeropuertoById(id: number): Promise<Aeropuerto> {
+  const response = await fetch(`${API_BASE_URL}/aeropuertos/id/${id}`);
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Crea un nuevo aeropuerto
+ */
+export async function createAeropuerto(aeropuerto: Omit<Aeropuerto, 'id'>): Promise<Aeropuerto> {
+  const response = await fetch(`${API_BASE_URL}/aeropuertos`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(aeropuerto),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Actualiza un aeropuerto existente
+ */
+export async function updateAeropuerto(id: number, aeropuerto: Partial<Aeropuerto>): Promise<Aeropuerto> {
+  const response = await fetch(`${API_BASE_URL}/aeropuertos/id/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(aeropuerto),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Elimina un aeropuerto
+ */
+export async function deleteAeropuerto(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/aeropuertos/id/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${response.statusText}`);
+  }
+}
+
+/**
+ * Filtra aeropuertos según criterios
+ */
+export async function filtrarAeropuertos(params: {
+  almacenId?: number;
+  pedidoId?: number;
+  tipo?: string;
+}): Promise<Aeropuerto[]> {
+  const queryParams = new URLSearchParams();
+  
+  if (params.almacenId) queryParams.append('almacenId', params.almacenId.toString());
+  if (params.pedidoId) queryParams.append('pedidoId', params.pedidoId.toString());
+  if (params.tipo) queryParams.append('tipo', params.tipo);
+
+  const response = await fetch(`${API_BASE_URL}/aeropuertos/filtrar?${queryParams}`);
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
+}
