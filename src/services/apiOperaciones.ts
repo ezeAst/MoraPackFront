@@ -2,7 +2,7 @@
 import type { OperacionesStatus } from '../types/operaciones';
 
 // Base URL del backend - usa variable de entorno o fallback a localhost
-const API_BASE_URL = `${import.meta.env.VITE_API_BASE || 'http://localhost:8080'}/api`;
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 /**
  * Obtiene el estado completo de las operaciones en tiempo real
