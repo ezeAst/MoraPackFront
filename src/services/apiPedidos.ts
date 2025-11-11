@@ -10,7 +10,7 @@ export type PedidoEvent = {
 };
 
 export async function importarPedidos(pedidos: PedidoDTO[]) {
-  const res = await fetch(`${API_BASE}/api/pedidos/importar`, { // <-- importar (con ar)
+  const res = await fetch(`${API_BASE}/api/pedidos/importarTxt`, { // <-- importar (con ar)
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(pedidos), // <-- enviar el ARRAY directo, no { pedidos }
