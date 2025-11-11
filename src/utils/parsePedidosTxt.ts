@@ -1,48 +1,106 @@
 // utils/parsePedidosTxt.ts
 export interface PedidoDTO {
-  dia: number;
+  id: number;                // 👈 id_pedido del archivo
+  anho: number;
   mes: number;
+  dia: number;
   hora: number;
   minuto: number;
   aeropuertoDestino: string;
   cantidad: number;
-  idCliente: string; // VARCHAR(7) en BD
+  idCliente: string;
 }
 
-// normaliza guiones raros/espacios por si acaso
 const norm = (s: string) =>
-  s.replace(/^\uFEFF/, '').replace(/[\u2010-\u2015]/g, '-').replace(/\s+/g, ' ').trim();
+  s
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u2010-\u2015]/g, '-')   // distintos tipos de guion → '-'
+    .replace(/\s+/g, ' ')
+    .trim();
 
-export function parsePedidosTxt(texto: string, mes: number): PedidoDTO[] {
+/**
+ * Formato:
+ *   id_pedido-yyyymmdd-hh-mm-DEST-###-IdClien
+ *
+ * Ej:
+ *   000003031-20251110-13-41-OPKC-134-5099558
+ */
+export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
   const out: PedidoDTO[] = [];
+  if (!texto) return out;
 
-  for (const raw of texto.split(/\r?\n/)) {
+  const lineas = texto.split(/\r?\n/);
+
+  for (const raw of lineas) {
     const line = norm(raw);
     if (!line) continue;
 
-    // DD-HH-MM-ICAO-QTY-ID7
     const parts = line.split('-');
-    if (parts.length !== 6) {
-      console.warn('[parsePedidosTxt] Formato inválido:', line);
+    if (parts.length !== 7) {
+      console.warn('[parsePedidosTxt] formato inválido (7 partes esperadas):', line);
       continue;
     }
 
-    const [dd, hh, mm, icaoRaw, qty, idCli] = parts;
-    const dia = +dd, hora = +hh, minuto = +mm, cantidad = +qty;
-    const icao = icaoRaw.toUpperCase();
+    const [
+      idPedidoStr, // 000003031
+      fechaStr,    // 20251110
+      horaStr,     // 13
+      minutoStr,   // 41
+      icaoRaw,     // OPKC
+      cantidadStr, // 134
+      idCliStr,    // 5099558
+    ] = parts;
 
-    // validaciones mínimas para evitar basura accidental
-    if (dia < 1 || dia > 31 || hora < 0 || hora > 23 || minuto < 0 || minuto > 59) {
-      console.warn('[parsePedidosTxt] fecha/hora inválida:', line); continue;
+    // --- id_pedido ---
+    if (!/^\d{1,12}$/.test(idPedidoStr)) {
+      console.warn('[parsePedidosTxt] id_pedido inválido:', idPedidoStr, 'en línea:', line);
+      continue;
     }
-    if (!/^[A-Z]{4}$/.test(icao))   { console.warn('[parsePedidosTxt] ICAO inválido:', icao); continue; }
-    if (!(cantidad >= 1 && cantidad <= 999)) { console.warn('[parsePedidosTxt] cantidad inválida:', cantidad); continue; }
-    if (!/^[0-9A-Za-z]{7}$/.test(idCli)) { console.warn('[parsePedidosTxt] idCliente inválido:', idCli); continue; }
+    const id = Number(idPedidoStr); // ej. 3031
 
-    out.push({ dia, mes, hora, minuto, aeropuertoDestino: icao, cantidad, idCliente: idCli });
+    // --- fecha yyyymmdd ---
+    if (!/^\d{8}$/.test(fechaStr)) {
+      console.warn('[parsePedidosTxt] fecha yyyymmdd inválida:', fechaStr, 'en línea:', line);
+      continue;
+    }
+
+    const anho = Number(fechaStr.slice(0, 4));
+    const mes = Number(fechaStr.slice(4, 6));
+    const dia = Number(fechaStr.slice(6, 8));
+
+    const hora = Number(horaStr);
+    const minuto = Number(minutoStr);
+    const icao = icaoRaw.trim().toUpperCase();
+    const cantidad = Number(cantidadStr);
+    const idCli = idCliStr.trim();
+
+    // --- validaciones básicas ---
+    if (Number.isNaN(anho) || anho < 2000 || anho > 2100) continue;
+    if (Number.isNaN(mes) || mes < 1 || mes > 12) continue;
+    if (Number.isNaN(dia) || dia < 1 || dia > 31) continue;
+
+    if (Number.isNaN(hora) || hora < 0 || hora > 23) continue;
+    if (Number.isNaN(minuto) || minuto < 0 || minuto > 59) continue;
+
+    if (!/^[A-Z]{4}$/.test(icao)) continue;
+
+    if (Number.isNaN(cantidad) || cantidad < 1 || cantidad > 999) continue;
+
+    if (!/^\d{7}$/.test(idCli)) continue;
+
+    out.push({
+      id,
+      anho,
+      mes,
+      dia,
+      hora,
+      minuto,
+      aeropuertoDestino: icao,
+      cantidad,
+      idCliente: idCli,
+    });
   }
 
   if (!out.length) console.error('[parsePedidosTxt] Resultado vacío.');
   return out;
 }
-

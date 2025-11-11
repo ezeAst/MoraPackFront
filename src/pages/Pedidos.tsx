@@ -108,7 +108,6 @@ export default function Pedidos() {
 
   const onUpload = async () => {
   if (!file) { alert('Selecciona un TXT'); return; }
-  if (!mes) { alert('Selecciona el mes'); return; }
 
   setLoading(true);
   try {
@@ -345,17 +344,6 @@ export default function Pedidos() {
               <div className="flex items-center gap-3 mb-4">
                 <Package className="w-6 h-6 text-[#0066FF]" />
                 <h2 className="text-xl font-bold text-gray-800">Carga masiva de pedidos (CSV/TXT)</h2>
-              </div>
-              <div className="sm:col-span-1">
-                <label className="block text-sm font-medium mb-1">Mes de los pedidos</label>
-                <select
-                  className="w-full rounded border px-3 py-2"
-                  value={mes}
-                  onChange={(e) => setMes(Number(e.target.value))}
-                >
-                  <option className="mb-3" value="">-- Selecciona --</option>
-                  {MESES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
               </div>
               <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col mt-2 items-center justify-center bg-blue-50">
                 <input
