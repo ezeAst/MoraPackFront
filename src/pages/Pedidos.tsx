@@ -4,6 +4,7 @@ import Papa from 'papaparse'; // Asegúrate de instalar papaparse: npm install p
 import type { Order, Client, Route } from '../types';
 import { parsePedidosTxt } from '../utils/parsePedidosTxt';
 import { importarPedidos } from '../services/apiPedidos';
+import { getDestinos } from '../services/apiDestinos';
 
 
 
@@ -67,6 +68,9 @@ export default function Pedidos() {
   const [searchTerm, setSearchTerm] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
   const [calculatedRoute, setCalculatedRoute] = useState<Route | null>(null);
+  const [destinos, setDestinos] = useState<string[]>([]);
+  const [destinosLoading, setDestinosLoading] = useState(false);
+  const [destinosError, setDestinosError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     productQuantity: '',
@@ -84,6 +88,19 @@ export default function Pedidos() {
 
   useEffect(() => {
     loadOrders();
+
+    (async () => {
+      try {
+        setDestinosLoading(true);
+        setDestinosError(null);
+        const data = await getDestinos();
+        setDestinos(data);
+      } catch (e: any) {
+        setDestinosError(e.message || 'Error cargando destinos');
+      } finally {
+        setDestinosLoading(false);
+      }
+    })();
   }, []);
 
   const loadOrders = () => {
@@ -271,16 +288,28 @@ export default function Pedidos() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ciudad Destino</label>
                 <select
                   value={formData.destinationCity}
-                  onChange={(e) => setFormData({ ...formData, destinationCity: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, destinationCity: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
                 >
-                  <option value="">Selecciona destino</option>
-                  <option value="Lisboa">Lisboa</option>
-                  <option value="Bogotá">Bogotá</option>
-                  <option value="India">India</option>
-                  <option value="Baku">Baku</option>
-                  <option value="Madrid">Madrid</option>
+                  <option value="">
+                    {destinosLoading ? 'Cargando destinos...' : 'Selecciona destino'}
+                  </option>
+
+                  {destinosError && (
+                    <option value="" disabled>
+                      {destinosError}
+                    </option>
+                  )}
+
+                  {destinos.map((ciudad) => (
+                    <option key={ciudad} value={ciudad}>
+                      {ciudad}
+                    </option>
+                  ))}
                 </select>
+
               </div>
 
               <button
