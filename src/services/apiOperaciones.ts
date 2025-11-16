@@ -4,6 +4,7 @@ import type { OperacionesStatus } from '../types/operaciones';
 // Base URL del backend - usa variable de entorno o fallback a localhost
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+
 // ==================== TIPOS ADICIONALES ====================
 
 export interface Aeropuerto {
