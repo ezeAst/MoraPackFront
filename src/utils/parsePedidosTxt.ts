@@ -1,6 +1,6 @@
 // utils/parsePedidosTxt.ts
 export interface PedidoDTO {
-  id: number;                // 👈 id_pedido del archivo
+  // ❌ ELIMINAR: id ya no se envía, el backend lo genera
   anho: number;
   mes: number;
   dia: number;
@@ -8,13 +8,15 @@ export interface PedidoDTO {
   minuto: number;
   aeropuertoDestino: string;
   cantidad: number;
+  cantidadCumplida: number;
   idCliente: string;
+  estado: string;
 }
 
 const norm = (s: string) =>
   s
     .replace(/^\uFEFF/, '')
-    .replace(/[\u2010-\u2015]/g, '-')   // distintos tipos de guion → '-'
+    .replace(/[\u2010-\u2015]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -24,8 +26,10 @@ const norm = (s: string) =>
  *
  * Ej:
  *   000003031-20251110-13-41-OPKC-134-5099558
+ * 
+ * NOTA: El id_pedido del archivo se IGNORA, el backend genera uno nuevo
  */
-export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
+export function parsePedidosTxt(texto: string): PedidoDTO[] {
   const out: PedidoDTO[] = [];
   if (!texto) return out;
 
@@ -44,7 +48,7 @@ export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
     }
 
     const [
-      idPedidoStr, // 000003031
+      idPedidoStr, // 000003031 (SE IGNORA)
       fechaStr,    // 20251110
       horaStr,     // 13
       minutoStr,   // 41
@@ -52,13 +56,6 @@ export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
       cantidadStr, // 134
       idCliStr,    // 5099558
     ] = parts;
-
-    // --- id_pedido ---
-    if (!/^\d{1,12}$/.test(idPedidoStr)) {
-      console.warn('[parsePedidosTxt] id_pedido inválido:', idPedidoStr, 'en línea:', line);
-      continue;
-    }
-    const id = Number(idPedidoStr); // ej. 3031
 
     // --- fecha yyyymmdd ---
     if (!/^\d{8}$/.test(fechaStr)) {
@@ -97,7 +94,6 @@ export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
     }
 
     out.push({
-      id,
       anho,
       mes,
       dia,
@@ -105,7 +101,9 @@ export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
       minuto,
       aeropuertoDestino: icao,
       cantidad,
+      cantidadCumplida: 0,
       idCliente: idCli,
+      estado: 'NO_ASIGNADO'
     });
   }
 
