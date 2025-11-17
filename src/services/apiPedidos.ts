@@ -19,7 +19,7 @@ export async function importarPedidosEnLotes(pedidos: PedidoDTO[], onProgress?: 
   for (let i = 0; i < pedidos.length; i += BATCH_SIZE) {
     const lote = pedidos.slice(i, i + BATCH_SIZE);
     
-    const res = await fetch(`${API_BASE}/api/pedidos/importarTxt`, {
+    const res = await fetch(`${API_BASE}/pedidos/importarTxt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(lote),
@@ -51,11 +51,7 @@ export async function importarPedidosEnLotes(pedidos: PedidoDTO[], onProgress?: 
 
 // Mantener la función original para compatibilidad
 export async function importarPedidos(pedidos: PedidoDTO[]) {
-<<<<<<< Updated upstream
-  const res = await fetch(`${API_BASE}/pedidos/importarTxt`, { // <-- importar (con ar)
-=======
-  const res = await fetch(`${API_BASE}/api/pedidos/importarTxt`, {
->>>>>>> Stashed changes
+  const res = await fetch(`${API_BASE}/pedidos/importarTxt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(pedidos),
