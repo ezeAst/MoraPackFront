@@ -29,6 +29,8 @@ export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
   const out: PedidoDTO[] = [];
   if (!texto) return out;
 
+  const SEDES_PRINCIPALES = new Set(['SPIM', 'UBBB', 'EBCI']);
+
   const lineas = texto.split(/\r?\n/);
 
   for (const raw of lineas) {
@@ -87,6 +89,12 @@ export function parsePedidosTxt(texto: string, _mes: number): PedidoDTO[] {
     if (Number.isNaN(cantidad) || cantidad < 1 || cantidad > 999) continue;
 
     if (!/^\d{7}$/.test(idCli)) continue;
+
+        // ✅ FILTRAR SEDES PRINCIPALES
+    if (SEDES_PRINCIPALES.has(icao)) {
+      console.log(`[parsePedidosTxt] Pedido a sede principal ${icao} excluido`);
+      continue;
+    }
 
     out.push({
       id,

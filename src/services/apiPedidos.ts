@@ -1,6 +1,6 @@
 import type { PedidoDTO } from '../utils/parsePedidosTxt';
 
-const API_BASE = import.meta.env.VITE_API_BASE;
+const API_BASE = 'http://localhost:8080/api';
 
 export type PedidoEvent = {
   id: string;
@@ -10,7 +10,7 @@ export type PedidoEvent = {
 };
 
 export async function importarPedidos(pedidos: PedidoDTO[]) {
-  const res = await fetch(`${API_BASE}/api/pedidos/importarTxt`, { // <-- importar (con ar)
+  const res = await fetch(`${API_BASE}/pedidos/importarTxt`, { // <-- importar (con ar)
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(pedidos), // <-- enviar el ARRAY directo, no { pedidos }
@@ -24,7 +24,7 @@ export async function importarPedidos(pedidos: PedidoDTO[]) {
 }
 
 export async function getPedidosEvents(): Promise<PedidoEvent[]> {
-  const res = await fetch(`${API_BASE}/api/pedidos/events`);
+  const res = await fetch(`${API_BASE}/pedidos/events`);
   if (!res.ok) {
     throw new Error('Error al obtener eventos de pedidos');
   }
