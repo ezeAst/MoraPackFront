@@ -71,7 +71,7 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
         }}
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/light-v11"
-        projection={{ name: 'mercator' }}  // ← AÑADE ESTA LÍNEA
+        projection={{ name: 'mercator' }}  
         >
       {/* Rutas */}
       {routes.map((route) => (
