@@ -8,6 +8,8 @@ import MapboxMap from '../components/MapboxMap';
 import * as api from '../services/api';
 import { CONTINENT_COLORS } from '../utils/colors';
 import { useSimulation } from '../contexts/SimulationContext';
+import nuevoAvion from '../Images/nuevoAvion.png'; // o la ruta que uses
+
 
 
 
@@ -220,6 +222,74 @@ export default function Simulacion() {
     color: getRouteColor(f)
   }));
 
+// Proyección Web Mercator (misma que usa Mapbox)
+const toRadians = (deg: number) => (deg * Math.PI) / 180;
+
+const projectToMercator = (lng: number, lat: number) => {
+  const λ = toRadians(lng);
+  const φ = toRadians(lat);
+  const x = λ;
+  const y = Math.log(Math.tan(Math.PI / 4 + φ / 2));
+  return { x, y };
+};
+
+const getPlaneAngle = (flight: api.Flight): number => {
+  const route = flight.route;
+  if (!route || route.length < 2) return 0;
+
+  const currentLng = flight.currentLng;
+  const currentLat = flight.currentLat;
+
+  // 1) Buscar el punto de la ruta más cercano a la posición actual del avión
+  let closestIndex = 0;
+  let minDist = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < route.length; i++) {
+    const [lng, lat] = route[i];
+    const dLng = lng - currentLng;
+    const dLat = lat - currentLat;
+    const dist = dLng * dLng + dLat * dLat;
+    if (dist < minDist) {
+      minDist = dist;
+      closestIndex = i;
+    }
+  }
+
+  // 2) Elegir el tramo (segmento) de la ruta más cercano
+  let idx1: number;
+  let idx2: number;
+
+  if (closestIndex === route.length - 1) {
+    idx1 = route.length - 2;
+    idx2 = route.length - 1;
+  } else {
+    idx1 = closestIndex;
+    idx2 = closestIndex + 1;
+  }
+
+  const [lng1, lat1] = route[idx1];
+  const [lng2, lat2] = route[idx2];
+
+  // 3) Proyectar a coordenadas Web Mercator
+  const p1 = projectToMercator(lng1, lat1);
+  const p2 = projectToMercator(lng2, lat2);
+
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+
+  // 4) Calcular ángulo en pantalla (eje Y hacia abajo → invertimos dy)
+  const angleRad = Math.atan2(-dy, dx);
+  const angleDeg = (angleRad * 180) / Math.PI;
+
+  // El SVG del avión está apuntando "a la derecha" (este) cuando angleDeg = 0,
+  // por eso devolvemos el ángulo tal cual. Si lo vieras 90° girado, aquí se ajusta.
+  return angleDeg;
+};
+
+
+
+
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-[#FF6600] text-white px-6 py-5">
@@ -414,52 +484,110 @@ export default function Simulacion() {
                 ))
               }
                 {/* Vuelos en tiempo real (filtrados por origen) */}
-                {legend.planes && filteredFlights.map(flight => {
-                  const pc = getPlaneColorAndPct(flight);
-                  const fillColor = pc.color;
+                {legend.planes && filteredFlights.map((flight) => {
+                const pc = getPlaneColorAndPct(flight);
+                const fillColor = pc.color;
 
-                  return (
-                    <Marker
-                      key={flight.id}
-                      longitude={flight.currentLng}
-                      latitude={flight.currentLat}
-                    >
-                      <div className="relative group">
-                        <svg width="28" height="28" viewBox="0 0 24 24" className="drop-shadow-lg">
-                          {(() => {
-                            // Obtener coordenadas de la ruta
-                            const [origin, destination] = flight.route;
-                            
-                            // Calcular el ángulo entre el origen y destino
-                            // Math.atan2 devuelve el ángulo en radianes entre el eje x positivo y el punto dado
-                            const angle = Math.atan2(
-                              destination[1] - origin[1], // delta y (lat)
-                              destination[0] - origin[0]  // delta x (lng)
-                            ) * (180 / Math.PI); // convertir a grados
+                // 1) posición del avión: SIEMPRE la que viene de la simulación
+                const markerLng = flight.currentLng;
+                const markerLat = flight.currentLat;
 
-                            return (
-                              <path
-                                d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
-                                fill={fillColor}
-                                transform={`rotate(${angle} 12 12)`}
-                              />
-                            );
-                          })()}
-                        </svg>
-                        {/* Tooltip */}
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                          <div className="font-semibold">{flight.flightCode}</div>
-                          <div>{flight.origin} → {flight.destination}</div>
-                          <div>{Math.round(flight.progressPercentage)}% completado</div>
-                          <div>{flight.packages} paquetes</div>
-                          {typeof pc.pct === 'number' && (
-                            <div>Carga: {Math.round(pc.pct)}%{(pc.current ?? undefined) !== undefined && (pc.capacity ?? undefined) !== undefined ? ` (${pc.current}/${pc.capacity})` : ''}</div>
-                          )}
+                // 2) ángulo: desde la posición actual → destino (último punto de la ruta)
+                let angle = 0;
+                const coords = flight.route || [];
+
+                if (
+                  typeof markerLng === 'number' &&
+                  typeof markerLat === 'number' &&
+                  coords.length >= 2
+                ) {
+                  // 1) Buscar el punto de la ruta más cercano a la posición actual
+                  let nearestIndex = 0;
+                  let minDist = Number.POSITIVE_INFINITY;
+
+                  for (let i = 0; i < coords.length; i++) {
+                    const [lng, lat] = coords[i];
+                    const dx = lng - markerLng;
+                    const dy = lat - markerLat;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 < minDist) {
+                      minDist = d2;
+                      nearestIndex = i;
+                    }
+                  }
+
+                  // 2) Tomar el segmento local de la ruta: punto cercano → siguiente punto
+                  const i1 = Math.max(0, Math.min(nearestIndex, coords.length - 2));
+                  const i2 = i1 + 1;
+
+                  const [lng1, lat1] = coords[i1];
+                  const [lng2, lat2] = coords[i2];
+
+                  // 3) Proyección tipo Mercator (como el mapa) para que el ángulo coincida con la línea
+                  const toRad = (deg: number) => (deg * Math.PI) / 180;
+                  const project = (lng: number, lat: number) => {
+                    const x = lng;
+                    const y = Math.log(Math.tan(Math.PI / 4 + toRad(lat) / 2));
+                    return { x, y };
+                  };
+
+                  const p1 = project(lng1, lat1);
+                  const p2 = project(lng2, lat2);
+
+                  const dx = p2.x - p1.x;
+                  const dy = p2.y - p1.y;
+
+                  // Ángulo base del segmento (el que "matemáticamente" es correcto)
+                  const baseAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+                  const OFFSET_Q2 = 90;  // puedes tunear luego
+                  const OFFSET_Q4 = 90;
+
+                  angle = baseAngle;     // 👈 SIN "let", usamos la de afuera
+
+                  if (dx < 0 && dy > 0) {
+                    // Q2
+                    angle = baseAngle + OFFSET_Q2;
+                  } else if (dx > 0 && dy < 0) {
+                    // Q4
+                    angle = baseAngle + OFFSET_Q4;
+                  }
+
+                  if (angle > 180) angle -= 360;
+                  if (angle <= -180) angle += 360;
+                }
+
+                return (
+                  <Marker
+                    key={flight.id}
+                    longitude={markerLng}
+                    latitude={markerLat}
+                    anchor="center"
+                  >
+                    <div className="relative group">
+                      <svg
+                        width="28"
+                        height="28"
+                        viewBox="0 0 24 24"
+                        className="drop-shadow-lg"
+                      >
+                        <path
+                          d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z"
+                          fill={fillColor}
+                          transform={`rotate(${angle} 12 12)`}
+                        />
+                      </svg>
+
+                      {typeof pc.pct === 'number' && (
+                        <div className="absolute left-1/2 -translate-x-1/2 -bottom-6 bg-black/70 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none">
+                          {pc.current}/{pc.capacity} ({pc.pct.toFixed(0)}%)
                         </div>
-                      </div>
-                    </Marker>
-                  );
-                })}
+                      )}
+                    </div>
+                  </Marker>
+                );
+              })}
+
               </MapboxMap>
 
 
