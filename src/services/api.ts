@@ -9,7 +9,7 @@ export type FlightStatus = 'scheduled' | 'in_flight' | 'landed';
 
 export type WarehouseStatus = 'normal' | 'warning' | 'critical' | 'full';
 
-export type SimulationStatus = 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED';
+export type SimulationStatus = 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED' | 'PLANNING_IN_PROGRESS';
 
 export interface Flight {
   id: string;
