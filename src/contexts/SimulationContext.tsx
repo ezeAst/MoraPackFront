@@ -13,6 +13,7 @@ interface SimulationContextType {
   currentTime: string;
   selectedScenario: 'weekly' | 'stress_test';
   startDateTime: string;
+  planningStatus: string;
   
   // Acciones
   setSimulationId: (id: string | null) => void;
@@ -39,14 +40,22 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [currentTime, setCurrentTime] = useState('');
   const [selectedScenario, setSelectedScenario] = useState<'weekly' | 'stress_test'>('weekly');
   const [startDateTime, setStartDateTime] = useState('');
+  const [planningStatus, setPlanningStatus] = useState<string>('');
 
-  // Polling para actualizar estado - SE MANTIENE ACTIVO INCLUSO SI CAMBIAS DE PÁGINA
+  // Polling para actualizar estado - Continúa incluso durante planificación
   useEffect(() => {
-    if (!simulationId || !isRunning) return;
+    if (!simulationId) return;
 
     const interval = setInterval(async () => {
       try {
         const status = await api.getSimulationStatus(simulationId);
+
+        // Detectar si está en planificación
+        if (status.status === 'PLANNING_IN_PROGRESS') {
+          setPlanningStatus(`Generando rutas... ${status.activeFlights.length} vuelos disponibles`);
+        } else {
+          setPlanningStatus('');
+        }
 
         setFlights(status.activeFlights);
         setWarehouses(status.warehouses);
@@ -65,7 +74,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         setCurrentTime(status.currentDateTime);
 
         // Si se completó, detener automáticamente
-        if (normalizedProgress >= 100) {
+        if (normalizedProgress >= 100 && status.status !== 'PLANNING_IN_PROGRESS') {
           setIsRunning(false);
         }
       } catch (err) {
@@ -74,7 +83,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     }, 1500); // Actualiza cada 1.5 segundos
 
     return () => clearInterval(interval);
-  }, [simulationId, isRunning]);
+  }, [simulationId]); // Remover isRunning para que siga haciendo polling durante planificación
 
   // Acciones
   const startSimulation = async (config: api.CreateSimulationRequest): Promise<api.CreateSimulationResponse> => {
@@ -83,6 +92,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setWarehouses(response.warehouses);
     setIsRunning(true);
     setProgress(0);
+    setPlanningStatus('Iniciando planificación...');
     return response;
   };
 
@@ -109,6 +119,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setEvents([]);
     setProgress(0);
     setCurrentTime('');
+    setPlanningStatus('');
   };
 
   return (
@@ -124,6 +135,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         currentTime,
         selectedScenario,
         startDateTime,
+        planningStatus,
         setSimulationId,
         setIsRunning,
         setSelectedScenario,

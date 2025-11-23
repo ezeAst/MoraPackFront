@@ -1,7 +1,5 @@
 // Base URL del backend
-//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const API_BASE_URL = 'http://localhost:8080/api';
-//const API_BASE_URL = `${import.meta.env.VITE_API_BASE || 'http://localhost:8080'}/api`;
 
 // ==================== TIPOS ====================
 
@@ -11,7 +9,7 @@ export type FlightStatus = 'scheduled' | 'in_flight' | 'landed';
 
 export type WarehouseStatus = 'normal' | 'warning' | 'critical' | 'full';
 
-export type SimulationStatus = 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED';
+export type SimulationStatus = 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED' | 'PLANNING_IN_PROGRESS';
 
 export interface Flight {
   id: string;

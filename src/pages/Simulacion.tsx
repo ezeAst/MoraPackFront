@@ -3,12 +3,14 @@ import {
   Play, Pause, Square, Download,
   ChevronDown, ChevronUp, Info
 } from 'lucide-react';
-import { Marker } from 'react-map-gl';
+import { Marker, Source, Layer } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
 import * as api from '../services/api';
 import { CONTINENT_COLORS } from '../utils/colors';
 import { useSimulation } from '../contexts/SimulationContext';
 import nuevoAvion from '../Images/nuevoAvion.png'; // o la ruta que uses
+
+
 
 
 export default function Simulacion() {
@@ -24,6 +26,7 @@ export default function Simulacion() {
     currentTime,
     selectedScenario,
     startDateTime,
+    planningStatus,  // ← AGREGAR ESTA LÍNEA
     setSelectedScenario,
     setStartDateTime,
     startSimulation,
@@ -31,7 +34,7 @@ export default function Simulacion() {
     resumeSimulation,
     stopSimulation,
   } = useSimulation();
-
+  
   const [showControlView, setShowControlView] = useState(false);
   const [showTopBar, setShowTopBar] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
@@ -194,6 +197,10 @@ export default function Simulacion() {
       console.error('Error al detener:', err);
     }
   };
+
+  console.log('🔍 Vuelos totales:', flights.length);
+  console.log('🔍 Vuelos in_flight:', flights.filter(f => f.status === 'in_flight').length);
+  console.log('🔍 Sample vuelo:', flights[0]);
 
   // Warehouses para el mapa
   const warehousesForMap = warehouses.map(w => ({
@@ -441,10 +448,41 @@ const getPlaneAngle = (flight: api.Flight): number => {
             </div>
 
             <div className="relative h-[calc(100vh-73px)] bg-gray-200">
-              <MapboxMap
-                warehouses={legend.warehouses ? warehousesForMap : []}
-                routes={legend.routes ? routesForMap : []}
-              >
+                  <MapboxMap
+                    warehouses={warehouses}
+                    routes={[]}
+                  >
+                  
+              {/* Rutas de vuelos */}
+              {legend.routes && flights
+                .filter(f => f.status === 'in_flight' && flightMatchesOriginFilter(f))
+                .map((flight) => (
+                  <Source
+                    key={`route-${flight.id}`}
+                    id={`route-${flight.id}`}
+                    type="geojson"
+                    data={{
+                      type: 'Feature',
+                      properties: {},
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: flight.route
+                      }
+                    }}
+                  >
+                    <Layer
+                      id={`route-layer-${flight.id}`}
+                      type="line"
+                      paint={{
+                        'line-width': 2,
+                        'line-color': getRouteColor(flight),
+                        'line-dasharray': [2, 2],
+                        'line-opacity': 0.6
+                      }}
+                    />
+                  </Source>
+                ))
+              }
                 {/* Vuelos en tiempo real (filtrados por origen) */}
                 {legend.planes && filteredFlights.map((flight) => {
                 const pc = getPlaneColorAndPct(flight);
@@ -551,6 +589,16 @@ const getPlaneAngle = (flight: api.Flight): number => {
               })}
 
               </MapboxMap>
+
+
+
+              {/* Banner de planificación en progreso */}
+                {planningStatus && (
+                  <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-30 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span className="font-medium">{planningStatus}</span>
+                  </div>
+                )}
 
               {/* Botón de Leyenda: solo ícono */}
               <div className="fixed left-3 bottom-3 z-30">

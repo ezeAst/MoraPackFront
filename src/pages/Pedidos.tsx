@@ -5,6 +5,7 @@ import type { Order, Client, Route } from '../types';
 import { parsePedidosTxt } from '../utils/parsePedidosTxt';
 import { importarPedidos } from '../services/apiPedidos';
 import { getDestinos } from '../services/apiDestinos';
+import { importarPedidosEnLotes } from '../services/apiPedidos'; // ✅ Cambiar import
 
 
 
@@ -123,28 +124,46 @@ export default function Pedidos() {
   };
 
 
-  const onUpload = async () => {
-  if (!file) { alert('Selecciona un TXT'); return; }
+  const [progress, setProgress] = useState(0);
+
+const onUpload = async () => {
+  if (!file) { 
+    alert('Selecciona un TXT'); 
+    return; 
+  }
 
   setLoading(true);
+  setProgress(0);
+  
   try {
     const txt = await file.text();
-    const mesNum = Number(mes);              // evita Number('') y ayuda a TS
-    const pedidos = parsePedidosTxt(txt, mesNum);
+    const pedidos = parsePedidosTxt(txt); // ✅ Ya no necesita mes
 
     if (!pedidos.length) {
-      alert('No se encontraron pedidos válidos (o todos fueron excluidos).');
+      alert('No se encontraron pedidos válidos.');
       return;
     }
 
-    const resp = await importarPedidos(pedidos);
-    alert(`Se cargaron ${resp.inserted ?? pedidos.length} pedidos`);
+    console.log(`📦 Pedidos parseados: ${pedidos.length}`);
 
-    // limpiar file input
+    // ✅ USAR IMPORTACIÓN POR LOTES
+    const resp = await importarPedidosEnLotes(pedidos, (prog) => {
+      setProgress(prog);
+    });
+
+    alert(
+      `✅ Importación completada:\n` +
+      `- Insertados: ${resp.insertados}\n` +
+      `- Duplicados: ${resp.duplicados}\n` +
+      `- Errores: ${resp.errores}`
+    );
+
+    // Limpiar file input
     const inputEl = document.getElementById('file-pedidos') as HTMLInputElement | null;
     if (inputEl) inputEl.value = '';
     setFile(null);
-  } catch (e:any) {
+    setProgress(0);
+  } catch (e: any) {
     alert(e.message || 'Error al importar pedidos');
   } finally {
     setLoading(false);
@@ -382,9 +401,9 @@ export default function Pedidos() {
                   className="mb-4"
                 />
                 <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV/TXT con los pedidos</span>
-                <button onClick={onUpload} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
-                  {loading ? 'Procesando...' : 'Cargar pedidos masivos'}
-                </button>
+                    <button onClick={onUpload} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
+                      {loading ? `Procesando... ${progress}%` : 'Cargar pedidos masivos'}
+                    </button>
               </div>
             </div>
           </div>
