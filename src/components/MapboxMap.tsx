@@ -8,7 +8,7 @@ type Warehouse = {
   name: string;
   lat: number;
   lng: number;
-  status: 'normal' | 'warning' | 'critical';
+  status: 'normal' | 'warning' | 'critical' | 'full';
   capacity?: number;
   current?: number;
 };
@@ -35,14 +35,15 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
     }
   }, [onMapLoad]);
 
-  const getWarehouseColor = (status: string) => {
-    switch (status) {
-      case 'critical': return '#DC3545';
-      case 'warning': return '#FFC107';
-      case 'normal': return '#28A745';
-      default: return '#6B7280';
-    }
-  };
+ const getWarehouseColor = (status: string) => {
+  switch (status) {
+    case 'critical': return '#DC3545';
+    case 'full': return '#DC3545';  // Mismo color que critical
+    case 'warning': return '#FFC107';
+    case 'normal': return '#28A745';
+    default: return '#6B7280';
+  }
+};
 
   const routeLayer: LayerProps = {
     id: 'route',
