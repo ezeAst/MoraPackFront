@@ -71,3 +71,20 @@ export async function getPedidosEvents(): Promise<PedidoEvent[]> {
   }
   return res.json();
 }
+
+export type PedidoEnAlmacen = {
+  id: number;
+  aeropuertoDestino: string;
+  cantidad: number;
+  estado: string;
+  tramoActual: number;
+  fecha: string;
+};
+
+export async function getPedidosPorAlmacen(codigoAlmacen: string): Promise<PedidoEnAlmacen[]> {
+  const res = await fetch(`${API_BASE}/pedidos/almacen/${codigoAlmacen}`);
+  if (!res.ok) {
+    throw new Error(`Error al obtener pedidos del almacén ${codigoAlmacen}`);
+  }
+  return res.json();
+}

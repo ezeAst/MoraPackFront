@@ -62,6 +62,16 @@ export interface VueloActivo {
   progressPercentage: number;
 }
 
+export interface PedidoEnVuelo {
+  id: number;
+  aeropuertoDestino: string;
+  cantidad: number;
+  estado: string;
+  tramoActual: number;
+  fecha: string;
+  idCliente: string;
+}
+
 // ==================== FUNCIONES API ====================
 
 /**
@@ -190,6 +200,38 @@ export async function getAeropuertos(): Promise<Aeropuerto[]> {
   
   if (!response.ok) {
     throw new Error(`Error al obtener aeropuertos: ${response.status} ${response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+/**
+ * Obtiene los pedidos que van en un vuelo específico
+ * 
+ * @param origen - Código del aeropuerto de origen
+ * @param destino - Código del aeropuerto de destino
+ * @param fecha - Fecha del vuelo en formato YYYY-MM-DD
+ * @param hora - Hora del vuelo en formato HH:mm
+ * @returns Lista de pedidos en tránsito en ese vuelo
+ * @throws Error si la petición falla
+ */
+export async function getPedidosEnVuelo(
+  origen: string,
+  destino: string,
+  fecha: string,
+  hora: string
+): Promise<PedidoEnVuelo[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/operaciones/vuelos/${origen}/${destino}/${fecha}/${hora}/pedidos`,
+    {
+      headers: {
+        'Accept': 'application/json',
+      },
+    }
+  );
+  
+  if (!response.ok) {
+    throw new Error(`Error al obtener pedidos del vuelo: ${response.status} ${response.statusText}`);
   }
   
   return response.json();

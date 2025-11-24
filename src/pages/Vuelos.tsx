@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plane, Download, RefreshCcw } from 'lucide-react';
-import { getVuelosActivos } from '../services/apiOperaciones';
+import { Plane, Download, RefreshCcw, Package, X } from 'lucide-react';
+import { getVuelosActivos, getPedidosEnVuelo, type PedidoEnVuelo } from '../services/apiOperaciones';
 
 // Intervalo de polling (ms)
 const POLLING_INTERVAL = 5000;
@@ -16,6 +16,10 @@ interface VistaVuelo {
   statusLabel: string;
   progressPercentage: number;
   remainingSeconds: number;
+  // Datos adicionales para el endpoint de pedidos
+  departureTime: string;
+  originCode?: string;
+  destCode?: string;
 }
 
 function formatRemaining(seconds: number): string {
@@ -34,6 +38,13 @@ export default function Vuelos() {
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<number | null>(null);
 
+  // Estados para el modal de pedidos
+  const [showPedidosModal, setShowPedidosModal] = useState(false);
+  const [selectedFlight, setSelectedFlight] = useState<VistaVuelo | null>(null);
+  const [pedidosEnVuelo, setPedidosEnVuelo] = useState<PedidoEnVuelo[]>([]);
+  const [loadingPedidos, setLoadingPedidos] = useState(false);
+  const [errorPedidos, setErrorPedidos] = useState<string | null>(null);
+
   // Cargar vuelos activos
   const fetchFlights = async (manual = false) => {
     if (manual) {
@@ -44,9 +55,15 @@ export default function Vuelos() {
       setError(null);
       const data = await getVuelosActivos();
       const mapped: VistaVuelo[] = data.map(v => {
+        // Extraer códigos de origen y destino del flightCode (formato: ORIGEN-DESTINO-timestamp)
+        const parts = v.flightCode.split('-');
+        const originCode = parts[0] || '';
+        const destCode = parts[1] || '';
+        
         // El backend entrega route: [[lng,lat],[lng,lat]] pero no nombres; derivamos nombres simples lng,lat para ahora
-        const origenStr = v.route && v.route[0] ? `${v.route[0][1].toFixed(2)},${v.route[0][0].toFixed(2)}` : 'Origen';
-        const destinoStr = v.route && v.route[1] ? `${v.route[1][1].toFixed(2)},${v.route[1][0].toFixed(2)}` : 'Destino';
+        const origenStr = originCode || (v.route && v.route[0] ? `${v.route[0][1].toFixed(2)},${v.route[0][0].toFixed(2)}` : 'Origen');
+        const destinoStr = destCode || (v.route && v.route[1] ? `${v.route[1][1].toFixed(2)},${v.route[1][0].toFixed(2)}` : 'Destino');
+        
         return {
           id: v.id,
           flightCode: v.flightCode,
@@ -55,9 +72,12 @@ export default function Vuelos() {
           packages: v.packages,
           capacity: v.capacity,
           status: v.status,
-          statusLabel: v.status, // statusLabel ya está normalizado a valores PROGRAMADO/EN_VUELO/ATERRIZADO
+          statusLabel: v.status,
           progressPercentage: Math.min(100, Math.max(0, v.progressPercentage)),
-          remainingSeconds: Math.max(0, v.durationSeconds - v.elapsedSeconds)
+          remainingSeconds: Math.max(0, v.durationSeconds - v.elapsedSeconds),
+          departureTime: v.departureTime,
+          originCode,
+          destCode
         };
       });
       // Orden: activos primero por menor tiempo restante, luego el resto
@@ -74,6 +94,46 @@ export default function Vuelos() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Manejar apertura del modal de pedidos
+  const handleVerPedidos = async (flight: VistaVuelo) => {
+    setSelectedFlight(flight);
+    setShowPedidosModal(true);
+    setLoadingPedidos(true);
+    setErrorPedidos(null);
+    setPedidosEnVuelo([]);
+
+    try {
+      // Extraer fecha y hora del departureTime (formato ISO: 2024-01-15T10:30:00)
+      const depTime = new Date(flight.departureTime);
+      const fecha = depTime.toISOString().split('T')[0]; // YYYY-MM-DD
+      const hora = `${String(depTime.getHours()).padStart(2, '0')}:${String(depTime.getMinutes()).padStart(2, '0')}`; // HH:mm
+
+      if (!flight.originCode || !flight.destCode) {
+        throw new Error('No se pudo determinar origen/destino del vuelo');
+      }
+
+      const pedidos = await getPedidosEnVuelo(
+        flight.originCode,
+        flight.destCode,
+        fecha,
+        hora
+      );
+      setPedidosEnVuelo(pedidos);
+    } catch (err: any) {
+      setErrorPedidos(err.message || 'Error al cargar los pedidos del vuelo');
+      console.error('Error cargando pedidos del vuelo:', err);
+    } finally {
+      setLoadingPedidos(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowPedidosModal(false);
+    setSelectedFlight(null);
+    setPedidosEnVuelo([]);
+    setErrorPedidos(null);
   };
 
   // Iniciar polling
@@ -207,6 +267,7 @@ export default function Vuelos() {
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Estado</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Progreso</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Tiempo restante</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -232,16 +293,25 @@ export default function Vuelos() {
                       </div>
                     </td>
                     <td className="px-6 py-4 font-medium text-gray-700">{formatRemaining(f.remainingSeconds)}</td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => handleVerPedidos(f)}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                      >
+                        <Package className="w-4 h-4" />
+                        Ver pedidos
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {!loading && !filteredFlights.length && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">No hay vuelos para los filtros seleccionados.</td>
+                    <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">No hay vuelos para los filtros seleccionados.</td>
                   </tr>
                 )}
                 {loading && flights.length > 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-xs text-gray-400">Actualizando...</td>
+                    <td colSpan={7} className="px-6 py-4 text-center text-xs text-gray-400">Actualizando...</td>
                   </tr>
                 )}
               </tbody>
@@ -256,6 +326,112 @@ export default function Vuelos() {
           </button>
         </div>
       </div>
+
+      {/* Modal de pedidos */}
+      {showPedidosModal && selectedFlight && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-[#FF6600] text-white px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Pedidos en vuelo</h2>
+                <p className="text-sm opacity-90 mt-1">
+                  {selectedFlight.flightCode} | {selectedFlight.origin} → {selectedFlight.destination}
+                </p>
+              </div>
+              <button
+                onClick={handleCloseModal}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingPedidos ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-[#FF6600] border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p className="text-gray-600">Cargando pedidos...</p>
+                </div>
+              ) : errorPedidos ? (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4">
+                  <p className="text-red-700">
+                    <span className="font-bold">Error:</span> {errorPedidos}
+                  </p>
+                </div>
+              ) : pedidosEnVuelo.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">No hay pedidos en este vuelo</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <p className="text-sm text-gray-600">
+                      Total de pedidos: <span className="font-semibold text-gray-800">{pedidosEnVuelo.length}</span>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Carga: <span className="font-semibold text-gray-800">{selectedFlight.packages}/{selectedFlight.capacity}</span>
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b-2 border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID Pedido</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Cliente</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Destino</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Cantidad</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Estado</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tramo</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {pedidosEnVuelo.map((pedido) => (
+                          <tr key={pedido.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">#{pedido.id}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.idCliente}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.aeropuertoDestino}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.cantidad}</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {pedido.estado}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">Tramo {pedido.tramoActual}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {new Date(pedido.fecha).toLocaleDateString('es-ES', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-gray-50 px-6 py-4 border-t">
+              <button
+                onClick={handleCloseModal}
+                className="w-full px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -115,7 +115,7 @@ export default function Simulacion() {
   const getCapacityColor = (pct: number) => {
     if (pct < 70) return '#22c55e';     // verde
     if (pct <= 90) return '#eab308';    // amarillo
-    return '#ef4444';                   // rojo
+    return '#ef4444';                   // rojo (incluye cuando pct > 100)
   };
 
   // devuelve el color para el avión y su % (si se pudo calcular)
@@ -212,15 +212,8 @@ export default function Simulacion() {
     current: w.current,
   }));
 
-  // Vuelos filtrados por origen (afecta rutas y aviones)
-  const filteredFlights = flights.filter(flightMatchesOriginFilter);
-
-  // Rutas para el mapa (solo de vuelos filtrados)
-  const routesForMap = filteredFlights.map(f => ({
-    id: f.id,
-    coordinates: f.route,
-    color: getRouteColor(f)
-  }));
+  // Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
+  const filteredFlights = flights.filter(f => f.status === 'in_flight' && flightMatchesOriginFilter(f));
 
 // Proyección Web Mercator (misma que usa Mapbox)
 const toRadians = (deg: number) => (deg * Math.PI) / 180;
@@ -454,9 +447,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
                   >
                   
               {/* Rutas de vuelos */}
-              {legend.routes && flights
-                .filter(f => f.status === 'in_flight' && flightMatchesOriginFilter(f))
-                .map((flight) => (
+              {legend.routes && filteredFlights.map((flight) => (
                   <Source
                     key={`route-${flight.id}`}
                     id={`route-${flight.id}`}
@@ -733,7 +724,6 @@ const getPlaneAngle = (flight: api.Flight): number => {
                         <p className="text-gray-700"><span className="font-semibold">Paquetes entregados:</span> {metrics.packagesDelivered}</p>
                         <p className="text-gray-700"><span className="font-semibold">Paquetes pendientes:</span> {metrics.packagesPending}</p>
                         <p className="text-gray-700"><span className="font-semibold">Tasa de éxito:</span> {metrics.successRate.toFixed(1)}%</p>
-                        <p className="text-gray-700"><span className="font-semibold">Violaciones:</span> {metrics.warehouseViolations + metrics.flightViolations}</p>
                       </div>
                     </>
                   )}

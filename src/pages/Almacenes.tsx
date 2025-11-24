@@ -1,29 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Filter, RefreshCw } from 'lucide-react';
-import { getAeropuertos, type Aeropuerto } from '../services/api';
-
-// Función helper para determinar el estado del almacén según su ocupación
-const getWarehouseStatus = (current: number, max: number): 'normal' | 'warning' | 'critical' => {
-  // Validación: si hay valores inválidos, retornar 'normal' por defecto
-  if (!max || max <= 0 || !current || current < 0 || isNaN(current) || isNaN(max)) {
-    return 'normal';
-  }
-  
-  const percentage = (current / max) * 100;
-  if (percentage >= 90) return 'critical';
-  if (percentage >= 70) return 'warning';
-  return 'normal';
-};
+import { Filter, RefreshCw, Package, X } from 'lucide-react';
+import { getOperacionesStatus } from '../services/apiOperaciones';
+import type { Almacen } from '../types/operaciones';
+import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
 
 export default function Almacenes() {
-  const [warehouses, setWarehouses] = useState<Aeropuerto[]>([]);
+  const [warehouses, setWarehouses] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('Todos');
-  const [countryFilter, setCountryFilter] = useState('Todos');
   const [airportCodeFilterState, setAirportCodeFilterState] = useState('Todos');
   
-  // (Eliminado) Estado para modal de detalles
+  // Estados para el modal de pedidos
+  const [showPedidosModal, setShowPedidosModal] = useState(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<Almacen | null>(null);
+  const [pedidosEnAlmacen, setPedidosEnAlmacen] = useState<PedidoEnAlmacen[]>([]);
+  const [loadingPedidos, setLoadingPedidos] = useState(false);
+  const [errorPedidos, setErrorPedidos] = useState<string | null>(null);
 
   useEffect(() => {
     loadWarehouses();
@@ -33,8 +26,8 @@ export default function Almacenes() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getAeropuertos();
-      setWarehouses(data);
+      const response = await getOperacionesStatus();
+      setWarehouses(response.almacenes);
     } catch (err: any) {
       setError(err.message || 'Error al cargar los almacenes');
       console.error('Error cargando almacenes:', err);
@@ -43,9 +36,29 @@ export default function Almacenes() {
     }
   };
 
-  const getCapacityPercentage = (current: number, max: number) => {
-    if (!max || max <= 0) return 0;
-    return Math.round((current / max) * 100);
+  const handleVerPedidos = async (warehouse: Almacen) => {
+    setSelectedWarehouse(warehouse);
+    setShowPedidosModal(true);
+    setLoadingPedidos(true);
+    setErrorPedidos(null);
+    setPedidosEnAlmacen([]);
+
+    try {
+      const pedidos = await getPedidosPorAlmacen(warehouse.codigo);
+      setPedidosEnAlmacen(pedidos);
+    } catch (err: any) {
+      setErrorPedidos(err.message || 'Error al cargar los pedidos');
+      console.error('Error cargando pedidos del almacén:', err);
+    } finally {
+      setLoadingPedidos(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowPedidosModal(false);
+    setSelectedWarehouse(null);
+    setPedidosEnAlmacen([]);
+    setErrorPedidos(null);
   };
 
   const getCapacityColor = (percentage: number) => {
@@ -67,19 +80,17 @@ export default function Almacenes() {
   };
 
   const statusCounts = {
-    critical: warehouses.filter(w => getWarehouseStatus(w.capacidadActual, w.capacidad) === 'critical').length,
-    warning: warehouses.filter(w => getWarehouseStatus(w.capacidadActual, w.capacidad) === 'warning').length,
-    normal: warehouses.filter(w => getWarehouseStatus(w.capacidadActual, w.capacidad) === 'normal').length
+    critical: warehouses.filter(w => w.status === 'critical').length,
+    warning: warehouses.filter(w => w.status === 'warning').length,
+    normal: warehouses.filter(w => w.status === 'normal').length
   };
 
-  // Obtener lista única de países
-  const uniqueCountries = Array.from(new Set(warehouses.map(w => w.pais)));
   // Obtener lista única de códigos de aeropuerto
   const uniqueAirportCodes = Array.from(new Set(warehouses.map(w => w.codigo)));
 
   // Filtrado de almacenes según los filtros seleccionados
   const filteredWarehouses = warehouses.filter((w) => {
-    const warehouseStatus = getWarehouseStatus(w.capacidadActual, w.capacidad);
+    const warehouseStatus = w.status; // Ahora el backend ya nos da el status calculado
     
     // Filtro por estado
     const statusMatch =
@@ -88,13 +99,10 @@ export default function Almacenes() {
       (statusFilter === 'Alerta' && warehouseStatus === 'warning') ||
       (statusFilter === 'Normal' && warehouseStatus === 'normal');
 
-    // Filtro por país
-    const countryMatch = countryFilter === 'Todos' || w.pais === countryFilter;
-
     // Filtro por código de aeropuerto
     const airportCodeFilter = airportCodeFilterState === 'Todos' || w.codigo === airportCodeFilterState;
 
-    return statusMatch && countryMatch && airportCodeFilter;
+    return statusMatch && airportCodeFilter;
   });
 
   if (loading) {
@@ -166,20 +174,6 @@ export default function Almacenes() {
                 </select>
               </div>
 
-              <div className="flex flex-col">
-                <label className="text-xs text-gray-500 mb-1">País</label>
-                <select
-                  value={countryFilter}
-                  onChange={(e) => setCountryFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-                >
-                  <option>Todos</option>
-                  {uniqueCountries.map(country => (
-                    <option key={country} value={country}>{country}</option>
-                  ))}
-                </select>
-              </div>
-
               <button 
                 onClick={loadWarehouses}
                 className="mt-5 px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] flex items-center gap-2"
@@ -211,16 +205,16 @@ export default function Almacenes() {
             </div>
           ) : (
             filteredWarehouses.map((warehouse) => {
-              const percentage = getCapacityPercentage(warehouse.capacidadActual, warehouse.capacidad);
-              const warehouseStatus = getWarehouseStatus(warehouse.capacidadActual, warehouse.capacidad);
+              const percentage = Math.round(warehouse.ocupacion); // El backend ya calcula la ocupación
+              const warehouseStatus = warehouse.status; // El backend ya nos da el status
               const statusBadge = getStatusBadge(warehouseStatus);
 
               return (
-                <div key={warehouse.id} className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
+                <div key={warehouse.codigo} className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
                   <div className="p-6">
                     <h3 className="text-lg font-bold text-gray-800 mb-1">{warehouse.nombre}</h3>
                     <p className="text-sm text-gray-600 mb-4">
-                      {warehouse.codigo} | {warehouse.pais}
+                      {warehouse.codigo}
                     </p>
 
                     <div className="mb-4">
@@ -233,7 +227,7 @@ export default function Almacenes() {
                       <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                         <div
                           className={`h-full ${getCapacityColor(percentage)} transition-all`}
-                          style={{ width: `${percentage}%` }}
+                          style={{ width: `${Math.min(percentage, 100)}%` }}
                         />
                       </div>
                     </div>
@@ -241,18 +235,21 @@ export default function Almacenes() {
                     <div className="space-y-2 mb-4">
                       <div className="flex items-center gap-2 text-sm">
                         <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                        <span className="text-gray-700">Continente: <span className="font-semibold">{warehouse.continente}</span></span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <div className="w-4 h-4 bg-orange-500 rounded"></div>
-                        <span className="text-gray-700">Huso horario: <span className="font-semibold">UTC{warehouse.husoHorario > 0 ? '+' : ''}{warehouse.husoHorario}</span></span>
+                        <span className="text-gray-700">Coordenadas: <span className="font-semibold">{warehouse.lat.toFixed(4)}, {warehouse.lon.toFixed(4)}</span></span>
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2">
                       <span className={`w-full px-4 py-2 rounded-lg font-medium text-center ${statusBadge.color}`}>
                         {statusBadge.label}
                       </span>
+                      <button
+                        onClick={() => handleVerPedidos(warehouse)}
+                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Package className="w-4 h-4" />
+                        Ver pedidos
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -268,7 +265,106 @@ export default function Almacenes() {
         </div>
       </div>
 
-      {/* (Eliminado) Modal de detalles */}
+      {/* Modal de pedidos */}
+      {showPedidosModal && selectedWarehouse && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-[#FF6600] text-white px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Pedidos en almacén</h2>
+                <p className="text-sm opacity-90 mt-1">
+                  {selectedWarehouse.nombre} ({selectedWarehouse.codigo})
+                </p>
+              </div>
+              <button
+                onClick={handleCloseModal}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingPedidos ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-[#FF6600] border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p className="text-gray-600">Cargando pedidos...</p>
+                </div>
+              ) : errorPedidos ? (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4">
+                  <p className="text-red-700">
+                    <span className="font-bold">Error:</span> {errorPedidos}
+                  </p>
+                </div>
+              ) : pedidosEnAlmacen.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">No hay pedidos en este almacén</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600">
+                      Total de pedidos: <span className="font-semibold text-gray-800">{pedidosEnAlmacen.length}</span>
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b-2 border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Destino</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Cantidad</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Estado</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tramo</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {pedidosEnAlmacen.map((pedido) => (
+                          <tr key={pedido.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">#{pedido.id}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.aeropuertoDestino}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.cantidad}</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {pedido.estado}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">Tramo {pedido.tramoActual}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {new Date(pedido.fecha).toLocaleDateString('es-ES', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-gray-50 px-6 py-4 border-t">
+              <button
+                onClick={handleCloseModal}
+                className="w-full px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

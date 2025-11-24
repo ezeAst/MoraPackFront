@@ -42,7 +42,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [startDateTime, setStartDateTime] = useState('');
   const [planningStatus, setPlanningStatus] = useState<string>('');
 
-  // Polling para actualizar estado - Continúa incluso durante planificación
+  // Polling para actualizar estado - Continúa mientras haya una simulación activa
   useEffect(() => {
     if (!simulationId) return;
 
@@ -53,6 +53,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         // Detectar si está en planificación
         if (status.status === 'PLANNING_IN_PROGRESS') {
           setPlanningStatus(`Generando rutas... ${status.activeFlights.length} vuelos disponibles`);
+          setIsRunning(true); // Asegurar que isRunning está activo durante planificación
         } else {
           setPlanningStatus('');
         }
@@ -73,8 +74,12 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         
         setCurrentTime(status.currentDateTime);
 
-        // Si se completó, detener automáticamente
-        if (normalizedProgress >= 100 && status.status !== 'PLANNING_IN_PROGRESS') {
+        // Actualizar isRunning basado en el estado del backend
+        if (status.status === 'RUNNING' || status.status === 'PLANNING_IN_PROGRESS') {
+          setIsRunning(true);
+        } else if (status.status === 'PAUSED') {
+          setIsRunning(false);
+        } else if (status.status === 'COMPLETED') {
           setIsRunning(false);
         }
       } catch (err) {
@@ -83,7 +88,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     }, 1500); // Actualiza cada 1.5 segundos
 
     return () => clearInterval(interval);
-  }, [simulationId]); // Remover isRunning para que siga haciendo polling durante planificación
+  }, [simulationId]); // Solo depende de simulationId para mantener polling continuo
 
   // Acciones
   const startSimulation = async (config: api.CreateSimulationRequest): Promise<api.CreateSimulationResponse> => {
