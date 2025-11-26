@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE;
+//const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = "http://localhost:8080/api"
 
 
 export async function getDestinos(): Promise<string[]> {
