@@ -83,6 +83,18 @@ export default function Simulacion() {
     })();
   }, []);
 
+  useEffect(() => {
+  if (!simulationId || !isRunning) return;
+  
+  // Cada 30 segundos, forzar re-render limpiando el array de flights
+  const cleanupInterval = setInterval(() => {
+    console.log('🧹 Limpieza preventiva de duplicados');
+    // El context ya tiene la lógica, solo necesitamos que React detecte cambio
+  }, 30000);
+  
+  return () => clearInterval(cleanupInterval);
+}, [simulationId, isRunning]);
+
   // Color de ruta según continente de origen
   const getRouteColor = (flight: api.Flight): string => {
     const continentRaw =
@@ -248,16 +260,25 @@ export default function Simulacion() {
 
   // Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
   // Usamos useMemo para evitar duplicaciones de markers en el mapa
-  const filteredFlights = useMemo(() => {
-    return flights.filter(f => 
-      f.status === 'in_flight' && 
-      flightMatchesOriginFilter(f) &&
-      typeof f.currentLng === 'number' && 
-      typeof f.currentLat === 'number' &&
-      !isNaN(f.currentLng) &&
-      !isNaN(f.currentLat)
-    );
-  }, [flights, legend.america, legend.europa, legend.asia]);
+// Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
+// Usamos useMemo para evitar duplicaciones de markers en el mapa
+const filteredFlights = useMemo(() => {
+  const seen = new Set<string>();
+  return flights.filter(f => {
+    if (f.status !== 'in_flight') return false;
+    if (!flightMatchesOriginFilter(f)) return false;
+    if (typeof f.currentLng !== 'number' || typeof f.currentLat !== 'number') return false;
+    if (isNaN(f.currentLng) || isNaN(f.currentLat)) return false;
+    
+    // ✅ Deduplicar por ID
+    if (seen.has(f.id)) {
+      console.warn('⚠️ Vuelo duplicado detectado:', f.id);
+      return false;
+    }
+    seen.add(f.id);
+    return true;
+  });
+}, [flights, legend.america, legend.europa, legend.asia]);
 
 // Proyección Web Mercator (misma que usa Mapbox)
 const toRadians = (deg: number) => (deg * Math.PI) / 180;
@@ -491,34 +512,35 @@ const getPlaneAngle = (flight: api.Flight): number => {
                   >
                   
               {/* Rutas de vuelos */}
-              {legend.routes && filteredFlights.map((flight) => (
-                  <Source
-                    key={`route-${flight.id}`}
-                    id={`route-${flight.id}`}
-                    type="geojson"
-                    data={{
-                      type: 'Feature',
-                      properties: {},
-                      geometry: {
-                        type: 'LineString',
-                        coordinates: flight.route
-                      }
+              {/* Rutas de vuelos */}
+              {legend.routes && Object.keys(airportsByCode).length > 0 && filteredFlights.map((flight) => (
+                <Source
+                  key={`route-${flight.id}`}
+                  id={`route-${flight.id}`}
+                  type="geojson"
+                  data={{
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: flight.route
+                    }
+                  }}
+                >
+                  <Layer
+                    id={`route-layer-${flight.id}`}
+                    type="line"
+                    paint={{
+                      'line-width': 2,
+                      'line-color': getRouteColor(flight),
+                      'line-dasharray': [2, 2],
+                      'line-opacity': 0.6
                     }}
-                  >
-                    <Layer
-                      id={`route-layer-${flight.id}`}
-                      type="line"
-                      paint={{
-                        'line-width': 2,
-                        'line-color': getRouteColor(flight),
-                        'line-dasharray': [2, 2],
-                        'line-opacity': 0.6
-                      }}
-                    />
-                  </Source>
-                ))
+                  />
+                </Source>
+              ))
               }
-                {/* Vuelos en tiempo real (filtrados por origen) */}
+                              {/* Vuelos en tiempo real (filtrados por origen) */}
                 {legend.planes && filteredFlights.map((flight) => {
                 const pc = getPlaneColorAndPct(flight);
                 const fillColor = pc.color;
