@@ -493,8 +493,8 @@ const getPlaneAngle = (flight: api.Flight): number => {
               {/* Rutas de vuelos */}
               {legend.routes && filteredFlights.map((flight) => (
                   <Source
-                    key={`route-${flight.id}-${flight.status}`}
-                    id={`route-${flight.id}-${flight.status}`}
+                    key={`route-${flight.id}`}
+                    id={`route-${flight.id}`}
                     type="geojson"
                     data={{
                       type: 'Feature',
@@ -506,7 +506,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
                     }}
                   >
                     <Layer
-                      id={`route-layer-${flight.id}-${flight.status}`}
+                      id={`route-layer-${flight.id}`}
                       type="line"
                       paint={{
                         'line-width': 2,
@@ -583,7 +583,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
 
                 return (
                   <Marker
-                    key={`flight-${flight.id}-${flight.status}`}
+                    key={flight.id}
                     longitude={markerLng}
                     latitude={markerLat}
                     anchor="center"
