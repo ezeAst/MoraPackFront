@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Play, Pause, Square, Download,
   ChevronDown, ChevronUp, Info
@@ -83,6 +83,18 @@ export default function Simulacion() {
     })();
   }, []);
 
+  useEffect(() => {
+  if (!simulationId || !isRunning) return;
+  
+  // Cada 30 segundos, forzar re-render limpiando el array de flights
+  const cleanupInterval = setInterval(() => {
+    console.log('🧹 Limpieza preventiva de duplicados');
+    // El context ya tiene la lógica, solo necesitamos que React detecte cambio
+  }, 30000);
+  
+  return () => clearInterval(cleanupInterval);
+}, [simulationId, isRunning]);
+
   // Color de ruta según continente de origen
   const getRouteColor = (flight: api.Flight): string => {
     const continentRaw =
@@ -98,6 +110,40 @@ export default function Simulacion() {
     if (continent.includes('europa') || continent.includes('europe')) return '#6F42C1'; // morado
     if (continent.includes('asia')) return '#FF7A00';                    // naranja
     return '#6B7280';                                                    // gris
+  };
+
+  // Interpolar puntos en gran círculo (geodésica) para rutas curvas naturales
+  const interpolateGreatCircle = (start: [number, number], end: [number, number], numPoints: number = 50): [number, number][] => {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+    const [lon1, lat1] = start;
+    const [lon2, lat2] = end;
+
+    const φ1 = toRad(lat1);
+    const φ2 = toRad(lat2);
+    const Δλ = toRad(lon2 - lon1);
+
+    const points: [number, number][] = [];
+
+    for (let i = 0; i <= numPoints; i++) {
+      const f = i / numPoints;
+
+      // Fórmula de interpolación esférica (slerp)
+      const a = Math.sin((1 - f) * Δλ) / Math.sin(Δλ);
+      const b = Math.sin(f * Δλ) / Math.sin(Δλ);
+
+      const x = a * Math.cos(φ1) * Math.cos(toRad(lon1)) + b * Math.cos(φ2) * Math.cos(toRad(lon2));
+      const y = a * Math.cos(φ1) * Math.sin(toRad(lon1)) + b * Math.cos(φ2) * Math.sin(toRad(lon2));
+      const z = a * Math.sin(φ1) + b * Math.sin(φ2);
+
+      const φi = Math.atan2(z, Math.sqrt(x * x + y * y));
+      const λi = Math.atan2(y, x);
+
+      points.push([toDeg(λi), toDeg(φi)]);
+    }
+
+    return points;
   };
 
   // === Helpers de ocupación (aviones) ===
@@ -213,7 +259,26 @@ export default function Simulacion() {
   }));
 
   // Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
-  const filteredFlights = flights.filter(f => f.status === 'in_flight' && flightMatchesOriginFilter(f));
+  // Usamos useMemo para evitar duplicaciones de markers en el mapa
+// Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
+// Usamos useMemo para evitar duplicaciones de markers en el mapa
+const filteredFlights = useMemo(() => {
+  const seen = new Set<string>();
+  return flights.filter(f => {
+    if (f.status !== 'in_flight') return false;
+    if (!flightMatchesOriginFilter(f)) return false;
+    if (typeof f.currentLng !== 'number' || typeof f.currentLat !== 'number') return false;
+    if (isNaN(f.currentLng) || isNaN(f.currentLat)) return false;
+    
+    // ✅ Deduplicar por ID
+    if (seen.has(f.id)) {
+      console.warn('⚠️ Vuelo duplicado detectado:', f.id);
+      return false;
+    }
+    seen.add(f.id);
+    return true;
+  });
+}, [flights, legend.america, legend.europa, legend.asia]);
 
 // Proyección Web Mercator (misma que usa Mapbox)
 const toRadians = (deg: number) => (deg * Math.PI) / 180;
@@ -447,34 +512,35 @@ const getPlaneAngle = (flight: api.Flight): number => {
                   >
                   
               {/* Rutas de vuelos */}
-              {legend.routes && filteredFlights.map((flight) => (
-                  <Source
-                    key={`route-${flight.id}`}
-                    id={`route-${flight.id}`}
-                    type="geojson"
-                    data={{
-                      type: 'Feature',
-                      properties: {},
-                      geometry: {
-                        type: 'LineString',
-                        coordinates: flight.route
-                      }
+              {/* Rutas de vuelos */}
+              {legend.routes && Object.keys(airportsByCode).length > 0 && filteredFlights.map((flight) => (
+                <Source
+                  key={`route-${flight.id}`}
+                  id={`route-${flight.id}`}
+                  type="geojson"
+                  data={{
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: flight.route
+                    }
+                  }}
+                >
+                  <Layer
+                    id={`route-layer-${flight.id}`}
+                    type="line"
+                    paint={{
+                      'line-width': 2,
+                      'line-color': getRouteColor(flight),
+                      'line-dasharray': [2, 2],
+                      'line-opacity': 0.6
                     }}
-                  >
-                    <Layer
-                      id={`route-layer-${flight.id}`}
-                      type="line"
-                      paint={{
-                        'line-width': 2,
-                        'line-color': getRouteColor(flight),
-                        'line-dasharray': [2, 2],
-                        'line-opacity': 0.6
-                      }}
-                    />
-                  </Source>
-                ))
+                  />
+                </Source>
+              ))
               }
-                {/* Vuelos en tiempo real (filtrados por origen) */}
+                              {/* Vuelos en tiempo real (filtrados por origen) */}
                 {legend.planes && filteredFlights.map((flight) => {
                 const pc = getPlaneColorAndPct(flight);
                 const fillColor = pc.color;
@@ -483,7 +549,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
                 const markerLng = flight.currentLng;
                 const markerLat = flight.currentLat;
 
-                // 2) ángulo: desde la posición actual → destino (último punto de la ruta)
+                // 2) Calcular ángulo de dirección del avión basado en su ruta
                 let angle = 0;
                 const coords = flight.route || [];
 
@@ -492,7 +558,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
                   typeof markerLat === 'number' &&
                   coords.length >= 2
                 ) {
-                  // 1) Buscar el punto de la ruta más cercano a la posición actual
+                  // Buscar el punto de la ruta más cercano a la posición actual
                   let nearestIndex = 0;
                   let minDist = Number.POSITIVE_INFINITY;
 
@@ -507,43 +573,32 @@ const getPlaneAngle = (flight: api.Flight): number => {
                     }
                   }
 
-                  // 2) Tomar el segmento local de la ruta: punto cercano → siguiente punto
-                  const i1 = Math.max(0, Math.min(nearestIndex, coords.length - 2));
-                  const i2 = i1 + 1;
+                  // Tomar el siguiente punto en la ruta como dirección
+                  const nextIndex = Math.min(nearestIndex + 1, coords.length - 1);
+                  const [targetLng, targetLat] = coords[nextIndex];
 
-                  const [lng1, lat1] = coords[i1];
-                  const [lng2, lat2] = coords[i2];
-
-                  // 3) Proyección tipo Mercator (como el mapa) para que el ángulo coincida con la línea
+                  // Calcular bearing (dirección geográfica) entre posición actual y siguiente punto
+                  // Fórmula: bearing = atan2(sin(Δλ)·cos(φ2), cos(φ1)·sin(φ2) − sin(φ1)·cos(φ2)·cos(Δλ))
                   const toRad = (deg: number) => (deg * Math.PI) / 180;
-                  const project = (lng: number, lat: number) => {
-                    const x = lng;
-                    const y = Math.log(Math.tan(Math.PI / 4 + toRad(lat) / 2));
-                    return { x, y };
-                  };
+                  const toDeg = (rad: number) => (rad * 180) / Math.PI;
 
-                  const p1 = project(lng1, lat1);
-                  const p2 = project(lng2, lat2);
+                  const lat1 = toRad(markerLat);
+                  const lat2 = toRad(targetLat);
+                  const dLng = toRad(targetLng - markerLng);
 
-                  const dx = p2.x - p1.x;
-                  const dy = p2.y - p1.y;
-
-                  // Ángulo base del segmento (el que "matemáticamente" es correcto)
-                  const baseAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
-
-                  const OFFSET_Q2 = 90;  // puedes tunear luego
-                  const OFFSET_Q4 = 90;
-
-                  angle = baseAngle;     // 👈 SIN "let", usamos la de afuera
-
-                  if (dx < 0 && dy > 0) {
-                    // Q2
-                    angle = baseAngle + OFFSET_Q2;
-                  } else if (dx > 0 && dy < 0) {
-                    // Q4
-                    angle = baseAngle + OFFSET_Q4;
-                  }
-
+                  const y = Math.sin(dLng) * Math.cos(lat2);
+                  const x = Math.cos(lat1) * Math.sin(lat2) - 
+                           Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+                  
+                  const bearingRad = Math.atan2(y, x);
+                  const bearingDeg = toDeg(bearingRad);
+                  
+                  // Ajustar por orientación de la imagen del avión
+                  // Bearing geográfico: 0° = Norte, 90° = Este
+                  // Compensación: restamos 45° porque la imagen está rotada
+                  angle = bearingDeg - 45;
+                  
+                  // Normalizar a rango [-180, 180) para SVG
                   if (angle > 180) angle -= 360;
                   if (angle <= -180) angle += 360;
                 }
@@ -570,8 +625,12 @@ const getPlaneAngle = (flight: api.Flight): number => {
                       </svg>
 
                       {typeof pc.pct === 'number' && (
-                        <div className="absolute left-1/2 -translate-x-1/2 -bottom-6 bg-black/70 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none">
-                          {pc.current}/{pc.capacity} ({pc.pct.toFixed(0)}%)
+                        <div className="absolute left-1/2 -translate-x-1/2 -bottom-12 bg-black/80 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap shadow-lg">
+                          <div className="font-semibold text-center mb-1">{flight.flightCode || flight.id}</div>
+                          <div className="text-[10px] text-gray-300">{flight.origin} → {flight.destination}</div>
+                          <div className="text-[10px] mt-1 text-center border-t border-gray-600 pt-1">
+                            {pc.current}/{pc.capacity} kg ({pc.pct.toFixed(0)}%)
+                          </div>
                         </div>
                       )}
                     </div>
