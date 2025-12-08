@@ -2,8 +2,8 @@
 import type { OperacionesStatus } from '../types/operaciones';
 
 // Base URL del backend - usa variable de entorno o fallback a localhost
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-//const API_BASE_URL = "http://localhost:8080/api"
+//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = "http://localhost:8080/api"
 
 // ==================== TIPOS ADICIONALES ====================
 
@@ -20,9 +20,14 @@ export interface Aeropuerto {
   lon: number;
 }
 
+export interface StartOperacionesRequest {
+  fechaHoraInicio: string; // Formato: "YYYY-MM-DDTHH:mm:ss"
+}
+
 export interface StartOperacionesResponse {
   status: string;
   startTime: string;
+  tiempoSimulado: string;
   message: string;
 }
 
@@ -75,22 +80,25 @@ export interface PedidoEnVuelo {
 // ==================== FUNCIONES API ====================
 
 /**
- * Inicia el ciclo operativo en tiempo real (planificador día a día)
+ * Inicia el ciclo operativo con una fecha/hora específica (tiempo simulado)
  * 
- * @returns Estado de inicio con timestamp
+ * @param fechaHoraInicio - Fecha y hora de inicio en formato ISO (YYYY-MM-DDTHH:mm:ss)
+ * @returns Estado de inicio con timestamp y tiempo simulado
  * @throws Error si la petición falla
  */
-export async function startOperaciones(): Promise<StartOperacionesResponse> {
+export async function startOperaciones(fechaHoraInicio: string): Promise<StartOperacionesResponse> {
   const response = await fetch(`${API_BASE_URL}/operaciones/start`, {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ fechaHoraInicio }),
   });
   
   if (!response.ok) {
-    throw new Error(`Error al iniciar operaciones: ${response.status} ${response.statusText}`);
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Error al iniciar operaciones: ${response.status} ${response.statusText}`);
   }
   
   return response.json();
