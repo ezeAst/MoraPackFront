@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { BarChart3, Bell, Info } from 'lucide-react';
+import { BarChart3, Bell, Info, Play, Square, Calendar } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
-import { getOperacionesStatus, getAeropuertos, type Aeropuerto } from '../services/apiOperaciones';
+import { getOperacionesStatus, getAeropuertos, startOperaciones, stopOperaciones, type Aeropuerto } from '../services/apiOperaciones';
 import type { OperacionesStatus, VueloActivo } from '../types/operaciones';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -28,12 +28,19 @@ export default function Dashboard() {
   const [showStats, setShowStats] = useState(true);
   const [showAlerts, setShowAlerts] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
+  const [showStartModal, setShowStartModal] = useState(false);
 
   // Estados de datos
   const [operacionesData, setOperacionesData] = useState<OperacionesStatus | null>(null);
   const [aeropuertos, setAeropuertos] = useState<Aeropuerto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Estados para control de operaciones
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [horaInicio, setHoraInicio] = useState('');
+  const [iniciando, setIniciando] = useState(false);
+  const [deteniendo, setDeteniendo] = useState(false);
 
   // Estados de leyenda con filtros
   const [legend, setLegend] = useState({
@@ -150,6 +157,99 @@ export default function Dashboard() {
     lastEventCount.current = eventos.length;
   };
 
+  // ==================== CONTROL DE OPERACIONES ====================
+  
+  /**
+   * Inicia las operaciones con la fecha/hora configurada
+   */
+  const handleIniciarOperaciones = async () => {
+    if (!fechaInicio || !horaInicio) {
+      toast.error('Por favor, ingresa fecha y hora de inicio');
+      return;
+    }
+
+    try {
+      setIniciando(true);
+      
+      // Asegurar que horaInicio tiene formato HH:mm
+      let horaFormateada = horaInicio;
+      if (horaInicio.length === 5) {
+        // Ya está en formato HH:mm
+        horaFormateada = horaInicio;
+      } else if (horaInicio.length === 4) {
+        // Formato H:mm, agregar cero
+        horaFormateada = '0' + horaInicio;
+      }
+      
+      // Formato ISO: YYYY-MM-DDTHH:mm:ss
+      const fechaHoraISO = `${fechaInicio}T${horaFormateada}:00`;
+      
+      console.log('📅 Fecha de inicio:', fechaInicio);
+      console.log('🕐 Hora de inicio:', horaFormateada);
+      console.log('📝 Fecha/Hora ISO:', fechaHoraISO);
+      
+      const response = await startOperaciones(fechaHoraISO);
+      
+      console.log('✅ Response del backend:', response);
+      
+      toast.success(`Operaciones iniciadas desde ${fechaInicio} ${horaFormateada}`, {
+        icon: '🚀',
+        duration: 5000,
+      });
+      
+      setShowStartModal(false);
+      
+      // Actualizar el estado inmediatamente
+      await loadInitialData();
+      
+    } catch (error: any) {
+      console.error('❌ Error completo:', error);
+      toast.error(error.message || 'Error al iniciar operaciones');
+    } finally {
+      setIniciando(false);
+    }
+  };
+
+  /**
+   * Detiene las operaciones
+   */
+  const handleDetenerOperaciones = async () => {
+    try {
+      setDeteniendo(true);
+      
+      await stopOperaciones();
+      
+      toast.success('Operaciones detenidas', {
+        icon: '⏸️',
+        duration: 3000,
+      });
+      
+      // Actualizar el estado
+      await loadInitialData();
+      
+    } catch (error: any) {
+      toast.error(error.message || 'Error al detener operaciones');
+      console.error('Error al detener operaciones:', error);
+    } finally {
+      setDeteniendo(false);
+    }
+  };
+
+  /**
+   * Abre el modal con valores por defecto (fecha actual + 1 hora)
+   */
+  const handleAbrirModalInicio = () => {
+    const ahora = new Date();
+    ahora.setHours(ahora.getHours() + 1); // Sumar 1 hora
+    
+    const fecha = ahora.toISOString().split('T')[0]; // YYYY-MM-DD
+    const hora = ahora.toTimeString().substring(0, 5); // HH:mm
+    
+    setFechaInicio(fecha);
+    setHoraInicio(hora);
+    setShowStartModal(true);
+  };
+
   // ==================== CÁLCULO DE ROTACIÓN DE AVIONES ====================
   const calculateRotation = (route: [number, number][]): number => {
     if (route.length < 2) return 0;
@@ -234,17 +334,126 @@ export default function Dashboard() {
         }}
       />
 
+      {/* Modal de Configuración de Inicio */}
+      {showStartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <Calendar className="w-8 h-8 text-[#FF6600]" />
+              <h2 className="text-2xl font-bold text-gray-800">Configurar Inicio de Operaciones</h2>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              Define la fecha y hora desde la cual comenzará la simulación de operaciones.
+            </p>
+
+            <div className="space-y-5">
+              {/* Fecha */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Fecha de Inicio
+                </label>
+                <input
+                  type="date"
+                  value={fechaInicio}
+                  onChange={(e) => setFechaInicio(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent text-lg"
+                  required
+                />
+              </div>
+
+              {/* Hora */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Hora de Inicio
+                </label>
+                <input
+                  type="time"
+                  value={horaInicio}
+                  onChange={(e) => setHoraInicio(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent text-lg"
+                  required
+                />
+              </div>
+
+              {/* Información adicional */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Nota:</strong> El sistema utilizará esta fecha/hora como punto de partida para la simulación. 
+                  El tiempo avanzará automáticamente a partir de este momento.
+                </p>
+              </div>
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => setShowStartModal(false)}
+                disabled={iniciando}
+                className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleIniciarOperaciones}
+                disabled={iniciando || !fechaInicio || !horaInicio}
+                className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg font-semibold hover:bg-[#e55a00] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {iniciando ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Iniciando...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    Iniciar Simulación
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-[#FF6600] text-white px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Panel de Operaciones Globales</h1>
           <p className="text-lg mt-1">
             {operacionesData?.activo 
-              ? `Monitoreo en tiempo real desde ${operacionesData.inicioOperaciones}` 
-              : 'Esperando inicio de operaciones...'}
+              ? `🟢 Operaciones activas desde ${operacionesData.inicioOperaciones}` 
+              : '⚪ Esperando inicio de operaciones...'}
           </p>
+          {operacionesData?.usandoTiempoSimulado && (
+            <p className="text-sm mt-1 opacity-90">
+              ⏰ Tiempo simulado: {operacionesData.currentDateTime}
+            </p>
+          )}
         </div>
-        <div className="flex gap-3 mt-4 lg:mt-0">
+        <div className="flex gap-3 mt-4 lg:mt-0 flex-wrap">
+          {/* Botón Iniciar/Detener Operaciones */}
+          {!operacionesData?.activo ? (
+            <button
+              onClick={handleAbrirModalInicio}
+              disabled={iniciando}
+              className="bg-green-600 text-white px-5 py-2.5 rounded-lg font-medium shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Play className="w-4 h-4" />
+              {iniciando ? 'Iniciando...' : 'Iniciar Operaciones'}
+            </button>
+          ) : (
+            <button
+              onClick={handleDetenerOperaciones}
+              disabled={deteniendo}
+              className="bg-red-600 text-white px-5 py-2.5 rounded-lg font-medium shadow hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Square className="w-4 h-4" />
+              {deteniendo ? 'Deteniendo...' : 'Detener Operaciones'}
+            </button>
+          )}
+          
+          {/* Botones de UI */}
           <button
             onClick={() => setShowStats(v => !v)}
             className="bg-white text-[#FF6600] px-4 py-2 rounded-lg font-medium shadow hover:bg-gray-100"
