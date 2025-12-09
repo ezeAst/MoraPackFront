@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Filter, RefreshCw, Package, X } from 'lucide-react';
+import { useState, useEffect, useRef, ChangeEvent } from 'react';
+import { Filter, RefreshCw, Package, X,Upload  } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import type { Almacen } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
@@ -21,6 +21,22 @@ export default function Almacenes() {
   useEffect(() => {
     loadWarehouses();
   }, []);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 👉 Aquí luego llamarás a tu API para subir el CSV/archivo
+    console.log('Archivo de almacenes seleccionado:', file.name);
+    // e.target.value = ''; // opcional, para poder subir el mismo archivo otra vez
+  };
+
 
   const loadWarehouses = async () => {
     try {
@@ -118,10 +134,32 @@ export default function Almacenes() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-[#FF6600] text-white px-8 py-6">
-        <h1 className="text-3xl font-bold">Panel de almacenes</h1>
-        <p className="text-lg mt-1">Monitoreo de almacenes en tiempo real</p>
+      <div className="bg-[#FF6600] text-white px-8 py-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Panel de almacenes</h1>
+          <p className="text-lg mt-1">Monitoreo de almacenes en tiempo real</p>
+        </div>
+
+        <div>
+          <button
+            onClick={handleUploadClick}
+            className="px-4 py-2 bg-white text-[#FF6600] rounded-lg font-medium flex items-center gap-2 shadow hover:bg-gray-100"
+          >
+            <Upload className="w-4 h-4" />
+            Cargar Almacenes
+          </button>
+
+          {/* input oculto para seleccionar archivo */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+        </div>
       </div>
+
 
       <div className="p-8">
         {error && (
