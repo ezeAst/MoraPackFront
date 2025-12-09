@@ -14,6 +14,9 @@ interface SimulationContextType {
   selectedScenario: 'weekly' | 'stress_test';
   startDateTime: string;
   planningStatus: string;
+  realTime: string;
+  simulatedElapsedTime: string;
+  realElapsedTime: string;
   
   // Acciones
   setSimulationId: (id: string | null) => void;
@@ -41,6 +44,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [selectedScenario, setSelectedScenario] = useState<'weekly' | 'stress_test'>('weekly');
   const [startDateTime, setStartDateTime] = useState('');
   const [planningStatus, setPlanningStatus] = useState<string>('');
+  const [realTime, setRealTime] = useState('');
+  const [simulatedElapsedTime, setSimulatedElapsedTime] = useState('00:00:00');
+  const [realElapsedTime, setRealElapsedTime] = useState('00:00:00');
+  const [simulationStartTime, setSimulationStartTime] = useState<number | null>(null);
 
   // Polling para actualizar estado - Continúa mientras haya una simulación activa
   useEffect(() => {
@@ -90,6 +97,62 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [simulationId]); // Solo depende de simulationId para mantener polling continuo
 
+  // Efecto para actualizar tiempo real cada segundo
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      const formatted = now.toISOString().slice(0, 19).replace('T', ' ');
+      setRealTime(formatted);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Efecto para calcular tiempos transcurridos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Calcular tiempo transcurrido en tiempo real
+      if (simulationStartTime !== null && isRunning) {
+        const elapsedMs = Date.now() - simulationStartTime;
+        const totalSeconds = Math.floor(elapsedMs / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        setRealElapsedTime(
+          `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        );
+      }
+
+      // Calcular tiempo transcurrido en simulación
+      if (currentTime && startDateTime) {
+        try {
+          const start = new Date(startDateTime);
+          const current = new Date(currentTime);
+          const diffMs = current.getTime() - start.getTime();
+          
+          if (diffMs >= 0) {
+            const totalSeconds = Math.floor(diffMs / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            setSimulatedElapsedTime(
+              `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+            );
+          }
+        } catch (e) {
+          // Si hay error en el parseo, no actualizar
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [currentTime, startDateTime, simulationStartTime, isRunning]);
+
+  // Inicializar simulationStartTime cuando comienza una simulación
+  useEffect(() => {
+    if (simulationId && simulationStartTime === null) {
+      setSimulationStartTime(Date.now());
+    }
+  }, [simulationId, simulationStartTime]);
+
   // Acciones
   const startSimulation = async (config: api.CreateSimulationRequest): Promise<api.CreateSimulationResponse> => {
     const response = await api.createSimulation(config);
@@ -125,6 +188,9 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setProgress(0);
     setCurrentTime('');
     setPlanningStatus('');
+    setSimulatedElapsedTime('00:00:00');
+    setRealElapsedTime('00:00:00');
+    setSimulationStartTime(null);
   };
 
   return (
@@ -141,6 +207,9 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         selectedScenario,
         startDateTime,
         planningStatus,
+        realTime,
+        simulatedElapsedTime,
+        realElapsedTime,
         setSimulationId,
         setIsRunning,
         setSelectedScenario,

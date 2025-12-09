@@ -121,7 +121,7 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
             ) : (
               // Punto circular para el resto de las ciudades
               <div
-                className="w-6 h-6 rounded-full border-2 border-white shadow-lg cursor-pointer transition-transform hover:scale-125"
+                className="w-4 h-4 rounded-full border-2 border-white shadow-lg cursor-pointer transition-transform hover:scale-125"
                 style={{ backgroundColor: getWarehouseColor(warehouse.status) }}
               />
             )}

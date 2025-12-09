@@ -26,7 +26,10 @@ export default function Simulacion() {
     currentTime,
     selectedScenario,
     startDateTime,
-    planningStatus,  // ← AGREGAR ESTA LÍNEA
+    planningStatus,
+    realTime,
+    simulatedElapsedTime,
+    realElapsedTime,
     setSelectedScenario,
     setStartDateTime,
     startSimulation,
@@ -469,6 +472,27 @@ const getPlaneAngle = (flight: api.Flight): number => {
                     Estado: {isRunning ? 'en ejecución' : 'pausado'}
                   </p>
                 </div>
+                
+                {/* Información de tiempos */}
+                <div className="px-6 py-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-blue-50 rounded px-2 py-1 border border-blue-200">
+                    <p className="font-semibold text-blue-700">Tiempo simulado</p>
+                    <p className="font-mono text-gray-900">{currentTime || '---'}</p>
+                  </div>
+                  <div className="bg-green-50 rounded px-2 py-1 border border-green-200">
+                    <p className="font-semibold text-green-700">Tiempo real</p>
+                    <p className="font-mono text-gray-900">{realTime || '---'}</p>
+                  </div>
+                  <div className="bg-purple-50 rounded px-2 py-1 border border-purple-200">
+                    <p className="font-semibold text-purple-700">Transcurrido (sim)</p>
+                    <p className="font-mono text-gray-900">{simulatedElapsedTime}</p>
+                  </div>
+                  <div className="bg-amber-50 rounded px-2 py-1 border border-amber-200">
+                    <p className="font-semibold text-amber-700">Transcurrido (real)</p>
+                    <p className="font-mono text-gray-900">{realElapsedTime}</p>
+                  </div>
+                </div>
+
                 <div className="px-6 pb-3 pt-3 flex flex-wrap items-center gap-3">
                   {!isRunning ? (
                     <button
@@ -507,7 +531,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
 
             <div className="relative h-[calc(100vh-73px)] bg-gray-200">
                   <MapboxMap
-                    warehouses={warehouses}
+                    warehouses={warehouses as any}
                     routes={[]}
                   >
                   
