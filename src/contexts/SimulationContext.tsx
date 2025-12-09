@@ -17,6 +17,8 @@ interface SimulationContextType {
   realTime: string;
   simulatedElapsedTime: string;
   realElapsedTime: string;
+  activeOrders: api.OrderSnapshot[];
+  recentlyDeliveredOrders: api.OrderSnapshot[];
   
   // Acciones
   setSimulationId: (id: string | null) => void;
@@ -48,6 +50,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [simulatedElapsedTime, setSimulatedElapsedTime] = useState('00:00:00');
   const [realElapsedTime, setRealElapsedTime] = useState('00:00:00');
   const [simulationStartTime, setSimulationStartTime] = useState<number | null>(null);
+  const [activeOrders, setActiveOrders] = useState<api.OrderSnapshot[]>([]);
+  const [recentlyDeliveredOrders, setRecentlyDeliveredOrders] = useState<api.OrderSnapshot[]>([]);
 
   // Polling para actualizar estado - Continúa mientras haya una simulación activa
   useEffect(() => {
@@ -69,6 +73,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         setWarehouses(status.warehouses);
         setMetrics(status.metrics);
         setEvents(status.recentEvents.slice(0, 10));
+        setActiveOrders(status.activeOrders);
+        setRecentlyDeliveredOrders(status.recentlyDeliveredOrders);
         
         // Log para depuración si el backend envía valores inválidos
         if (status.progressPercentage < 0 || status.progressPercentage > 100) {
@@ -210,6 +216,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         realTime,
         simulatedElapsedTime,
         realElapsedTime,
+        activeOrders,
+        recentlyDeliveredOrders,
         setSimulationId,
         setIsRunning,
         setSelectedScenario,
