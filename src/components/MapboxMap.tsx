@@ -6,6 +6,7 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 type Warehouse = {
   name: string;
+  codigo: string;
   lat: number;
   lng: number;
   status: 'normal' | 'warning' | 'critical' | 'full';
@@ -24,9 +25,10 @@ type Props = {
   routes?: Route[];
   children?: React.ReactNode;
   onMapLoad?: (map: mapboxgl.Map) => void;
+  onWarehouseClick?: (codigoAlmacen: string) => void;
 };
 
-export default function MapboxMap({ warehouses, routes = [], children, onMapLoad }: Props) {
+export default function MapboxMap({ warehouses, routes = [], children, onMapLoad, onWarehouseClick }: Props) {
   const mapRef = useRef<MapRef>(null);
 
   useEffect(() => {
@@ -100,7 +102,11 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
           longitude={warehouse.lng}
           latitude={warehouse.lat}
         >
-          <div className="relative group">
+          <div 
+            className="relative group"
+            onClick={() => onWarehouseClick?.(warehouse.codigo)}
+            style={{ cursor: onWarehouseClick ? 'pointer' : 'default' }}
+          >
             {warehouseIconCities.includes(warehouse.name) ? (
               // Icono de almacén para las ciudades especificadas
               <svg

@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Filter, RefreshCw, Package, X } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import type { Almacen } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
 
 export default function Almacenes() {
+  const [searchParams] = useSearchParams();
+  
   const [warehouses, setWarehouses] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +24,18 @@ export default function Almacenes() {
   useEffect(() => {
     loadWarehouses();
   }, []);
+
+  // Efecto para aplicar filtro desde URL
+  useEffect(() => {
+    const codigoParam = searchParams.get('codigo');
+    if (codigoParam && warehouses.length > 0) {
+      // Verificar que el código exista en la lista de almacenes
+      const almacenExiste = warehouses.some(w => w.codigo === codigoParam);
+      if (almacenExiste) {
+        setAirportCodeFilterState(codigoParam);
+      }
+    }
+  }, [searchParams, warehouses]);
 
   const loadWarehouses = async () => {
     try {
