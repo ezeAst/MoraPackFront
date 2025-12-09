@@ -1,14 +1,13 @@
 // src/types/operaciones.ts
-// Tipos que coinciden con la respuesta del backend /api/operaciones/status
 
-export type WarehouseStatus = 'normal' | 'warning' | 'critical' | 'full';
+export type EstadoPedido = 'NO_ASIGNADO' | 'ASIGNADO' | 'EN_TRANSITO' | 'EN_ALMACEN_INTERMEDIO' | 'ENTREGADO' | 'RECOGIDO';
 
-export type FlightStatus = 'PROGRAMADO' | 'EN_VUELO' | 'ATERRIZADO';
+export type AlmacenStatus = 'normal' | 'warning' | 'critical';
 
 export interface VueloActivo {
   id: string;
   flightCode: string;
-  route: [number, number][]; // [[lng, lat], [lng, lat]]
+  route: [[number, number], [number, number]]; // [[lonOrigen, latOrigen], [lonDestino, latDestino]]
   origin: string;
   destination: string;
   currentLat: number;
@@ -18,8 +17,10 @@ export interface VueloActivo {
   durationSeconds: number;
   elapsedSeconds: number;
   packages: number;
+  pedidoCount: number;
   capacity: number;
-  status: FlightStatus;
+  status: string;
+  statusLabel: string;
   progressPercentage: number;
 }
 
@@ -29,7 +30,7 @@ export interface Almacen {
   capacidad: number;
   capacidadActual: number;
   ocupacion: number;
-  status: WarehouseStatus;
+  status: AlmacenStatus;
   lat: number;
   lon: number;
 }
@@ -45,6 +46,7 @@ export interface Metricas {
 
 export interface OperacionesStatus {
   currentDateTime: string;
+  usandoTiempoSimulado: boolean;
   activo: boolean;
   inicioOperaciones: string;
   vuelosActivos: VueloActivo[];

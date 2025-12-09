@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
-import { BarChart3, Bell, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { BarChart3, Bell, Info, Play, Square, Calendar } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
-import { getOperacionesStatus, getAeropuertos, type Aeropuerto } from '../services/apiOperaciones';
-import type { OperacionesStatus, VueloActivo } from '../types/operaciones';
-import toast, { Toaster } from 'react-hot-toast';
+import { getOperacionesStatus, startOperaciones, stopOperaciones, type Aeropuerto } from '../services/apiOperaciones';
+import type { OperacionesStatus } from '../types/operaciones';
 
 type Status = 'normal' | 'warning' | 'critical';
 
 type Warehouse = {
   name: string;
+  codigo: string;
   lat: number;
   lng: number;
   status: Status;
@@ -24,16 +25,24 @@ type Route = {
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  
   // Estados de UI
   const [showStats, setShowStats] = useState(true);
   const [showAlerts, setShowAlerts] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
+  const [showStartModal, setShowStartModal] = useState(false);
 
   // Estados de datos
   const [operacionesData, setOperacionesData] = useState<OperacionesStatus | null>(null);
-  const [aeropuertos, setAeropuertos] = useState<Aeropuerto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Estados para control de operaciones
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [horaInicio, setHoraInicio] = useState('');
+  const [iniciando, setIniciando] = useState(false);
+  const [deteniendo, setDeteniendo] = useState(false);
 
   // Estados de leyenda con filtros
   const [legend, setLegend] = useState({
@@ -42,9 +51,8 @@ export default function Dashboard() {
     routes: true,
   });
 
-  // Referencias para controlar notificaciones duplicadas
-  const notifiedEvents = useRef<Set<string>>(new Set());
-  const lastEventCount = useRef(0);
+  // Estado para el reloj en tiempo real
+  const [tiempoActual, setTiempoActual] = useState<string>('');
 
   // ==================== CARGA INICIAL ====================
   useEffect(() => {
@@ -54,10 +62,6 @@ export default function Dashboard() {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      // Cargar aeropuertos para inicializar el mapa
-      const aeros = await getAeropuertos();
-      setAeropuertos(aeros);
-      
       // Cargar estado inicial
       const status = await getOperacionesStatus();
       setOperacionesData(status);
@@ -65,7 +69,6 @@ export default function Dashboard() {
     } catch (err: any) {
       setError(err.message || 'Error al conectar con el servidor');
       console.error('Error al cargar datos iniciales:', err);
-      toast.error('No se pudo conectar con el servidor');
     } finally {
       setLoading(false);
     }
@@ -81,9 +84,6 @@ export default function Dashboard() {
         const status = await getOperacionesStatus();
         setOperacionesData(status);
         setError(null);
-
-        // Detectar nuevos eventos para notificaciones
-        checkForNewEvents(status);
       } catch (err: any) {
         console.error('Error en polling:', err);
         setError(err.message || 'Error de conexión');
@@ -93,82 +93,201 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [error]);
 
-  // ==================== SISTEMA DE NOTIFICACIONES ====================
-  const checkForNewEvents = (status: OperacionesStatus) => {
-    const eventos = status.eventosRecientes;
-    
-    // Si hay más eventos que la última vez, hay eventos nuevos
-    if (eventos.length > lastEventCount.current) {
-      const newEvents = eventos.slice(0, eventos.length - lastEventCount.current);
-      
-      newEvents.forEach((evento) => {
-        // Evitar notificar el mismo evento dos veces
-        if (notifiedEvents.current.has(evento)) return;
-        notifiedEvents.current.add(evento);
+  // ==================== RELOJ EN TIEMPO REAL ====================
+  useEffect(() => {
+    // Inicializar el tiempo actual cuando lleguen datos del backend
+    if (operacionesData?.currentDateTime) {
+      setTiempoActual(operacionesData.currentDateTime);
+    }
+  }, [operacionesData?.currentDateTime]);
 
-        // Determinar el tipo de notificación según el contenido
-        if (evento.includes('despegó') || evento.includes('🛫')) {
-          toast.success(evento, {
-            icon: '🛫',
-            duration: 4000,
-            position: 'top-right',
-          });
-        } else if (evento.includes('aterrizó') || evento.includes('🛬')) {
-          toast.success(evento, {
-            icon: '🛬',
-            duration: 4000,
-            position: 'top-right',
-          });
-        } else if (evento.includes('entregado') || evento.includes('✅')) {
-          toast.success(evento, {
-            icon: '✅',
-            duration: 4000,
-            position: 'top-right',
-          });
-        } else if (evento.includes('crítico') || evento.includes('90%') || evento.includes('95%')) {
-          toast.error(evento, {
-            icon: '⚠️',
-            duration: 5000,
-            position: 'top-right',
-          });
-        } else {
-          toast(evento, {
-            icon: 'ℹ️',
-            duration: 4000,
-            position: 'top-right',
-          });
-        }
-      });
-
-      // Limpiar notificaciones antiguas (mantener solo últimas 20)
-      if (notifiedEvents.current.size > 20) {
-        const arr = Array.from(notifiedEvents.current);
-        notifiedEvents.current = new Set(arr.slice(-20));
+  useEffect(() => {
+    // Actualizar el reloj cada segundo
+    const interval = setInterval(() => {
+      if (operacionesData?.activo && operacionesData?.usandoTiempoSimulado && tiempoActual) {
+        // Parsear la fecha actual y sumar 1 segundo
+        const fecha = new Date(tiempoActual);
+        fecha.setSeconds(fecha.getSeconds() + 1);
+        
+        // Formatear de vuelta al formato del backend
+        const year = fecha.getFullYear();
+        const month = String(fecha.getMonth() + 1).padStart(2, '0');
+        const day = String(fecha.getDate()).padStart(2, '0');
+        const hours = String(fecha.getHours()).padStart(2, '0');
+        const minutes = String(fecha.getMinutes()).padStart(2, '0');
+        const seconds = String(fecha.getSeconds()).padStart(2, '0');
+        
+        setTiempoActual(`${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
       }
+    }, 1000); // 1 segundo
+
+    return () => clearInterval(interval);
+  }, [operacionesData?.activo, operacionesData?.usandoTiempoSimulado, tiempoActual]);
+
+  // ==================== CONTROL DE OPERACIONES ====================
+  
+  /**
+   * Inicia las operaciones con la fecha/hora configurada
+   */
+  const handleIniciarOperaciones = async () => {
+    if (!fechaInicio || !horaInicio) {
+      return;
     }
 
-    lastEventCount.current = eventos.length;
+    try {
+      setIniciando(true);
+      
+      // Asegurar que horaInicio tiene formato HH:mm
+      let horaFormateada = horaInicio;
+      if (horaInicio.length === 5) {
+        // Ya está en formato HH:mm
+        horaFormateada = horaInicio;
+      } else if (horaInicio.length === 4) {
+        // Formato H:mm, agregar cero
+        horaFormateada = '0' + horaInicio;
+      }
+      
+      // Formato ISO: YYYY-MM-DDTHH:mm:ss
+      const fechaHoraISO = `${fechaInicio}T${horaFormateada}:00`;
+      
+      console.log('📅 Fecha de inicio:', fechaInicio);
+      console.log('🕐 Hora de inicio:', horaFormateada);
+      console.log('📝 Fecha/Hora ISO:', fechaHoraISO);
+      
+      const response = await startOperaciones(fechaHoraISO);
+      
+      console.log('✅ Response del backend:', response);
+      
+      setShowStartModal(false);
+      
+      // Actualizar el estado inmediatamente
+      await loadInitialData();
+      
+    } catch (error: any) {
+      console.error('❌ Error completo:', error);
+    } finally {
+      setIniciando(false);
+    }
+  };
+
+  /**
+   * Detiene las operaciones
+   */
+  const handleDetenerOperaciones = async () => {
+    try {
+      setDeteniendo(true);
+      
+      await stopOperaciones();
+      
+      // Actualizar el estado
+      await loadInitialData();
+      
+    } catch (error: any) {
+      console.error('Error al detener operaciones:', error);
+    } finally {
+      setDeteniendo(false);
+    }
+  };
+
+  /**
+   * Abre el modal con valores por defecto (fecha actual + 1 hora)
+   */
+  const handleAbrirModalInicio = () => {
+    const ahora = new Date();
+    ahora.setHours(ahora.getHours() + 1); // Sumar 1 hora
+    
+    const fecha = ahora.toISOString().split('T')[0]; // YYYY-MM-DD
+    const hora = ahora.toTimeString().substring(0, 5); // HH:mm
+    
+    setFechaInicio(fecha);
+    setHoraInicio(hora);
+    setShowStartModal(true);
+  };
+
+  /**
+   * Maneja el click en un almacén del mapa
+   * Navega a la página de almacenes con el código como filtro
+   */
+  const handleWarehouseClick = (codigoAlmacen: string) => {
+    navigate(`/almacenes?codigo=${codigoAlmacen}`);
+  };
+
+  /**
+   * Maneja el click en un avión del mapa
+   * Navega a la página de vuelos con el código de vuelo como filtro
+   */
+  const handlePlaneClick = (flightCode: string) => {
+    navigate(`/vuelos?vuelo=${flightCode}`);
   };
 
   // ==================== CÁLCULO DE ROTACIÓN DE AVIONES ====================
-  const calculateRotation = (route: [number, number][]): number => {
-    if (route.length < 2) return 0;
+  /**
+   * Calcula el bearing (dirección geográfica) entre la posición actual del avión
+   * y su destino para rotarlo correctamente
+   * Copiado de Simulacion.tsx
+   */
+  const calculateRotation = (currentLat: number, currentLng: number, destinationLat: number, destinationLng: number): number => {
+    // Fórmula: bearing = atan2(sin(Δλ)·cos(φ2), cos(φ1)·sin(φ2) − sin(φ1)·cos(φ2)·cos(Δλ))
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+    const lat1 = toRad(currentLat);
+    const lat2 = toRad(destinationLat);
+    const dLng = toRad(destinationLng - currentLng);
+
+    const y = Math.sin(dLng) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - 
+             Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
     
-    const [origin, destination] = route;
-    // Math.atan2 devuelve el ángulo en radianes
-    const angle = Math.atan2(
-      destination[1] - origin[1], // delta lat
-      destination[0] - origin[0]  // delta lng
-    ) * (180 / Math.PI); // convertir a grados
+    const bearingRad = Math.atan2(y, x);
+    const bearingDeg = toDeg(bearingRad);
+    
+    // Ajustar por orientación de la imagen del avión
+    // Bearing geográfico: 0° = Norte, 90° = Este
+    // Compensación: restamos 45° porque la imagen está rotada
+    let angle = bearingDeg - 45;
+    
+    // Normalizar a rango [-180, 180) para SVG
+    if (angle > 180) angle -= 360;
+    if (angle <= -180) angle += 360;
     
     return angle;
   };
 
   // ==================== PREPARACIÓN DE DATOS PARA EL MAPA ====================
   
+  /**
+   * Determina el color de la ruta según la ciudad de origen
+   */
+  const getRouteColorByOrigin = (originName: string): string => {
+    const origin = originName.toLowerCase();
+    
+    // Ciudades de América (Celeste)
+    const americaCities = ['lima', 'caracas', 'quito', 'brasilia', 'santiago', 'bogota', 'buenos aires', 'sao paulo'];
+    if (americaCities.some(city => origin.includes(city))) {
+      return '#00CFFF'; // Celeste
+    }
+    
+    // Ciudades de Europa (Morado)
+    const europeCities = ['bruselas', 'sofia', 'copenhague', 'viena', 'roma', 'madrid', 'lisboa', 'londres', 'amsterdam', 'frankfurt', 'paris', 'moscu', 'san petersburgo'];
+    if (europeCities.some(city => origin.includes(city))) {
+      return '#6F42C1'; // Morado
+    }
+    
+    // Ciudades de Asia (Naranja)
+    const asiaCities = ['baku', 'beijing', 'shanghai', 'kunming', 'delhi', 'tokyo'];
+    if (asiaCities.some(city => origin.includes(city))) {
+      return '#FF7A00'; // Naranja
+    }
+    
+    // Fallback: morado
+    return '#6F42C1';
+  };
+  
   // Almacenes: convertir de Almacen[] a Warehouse[]
   const warehousesForMap: Warehouse[] = operacionesData?.almacenes.map(a => ({
     name: a.nombre,
+    codigo: a.codigo,
     lat: a.lat,
     lng: a.lon,
     status: a.status as Status,
@@ -177,13 +296,27 @@ export default function Dashboard() {
   })) || [];
 
   // Rutas: crear líneas entre origen y destino de cada vuelo
+  // Colores según continente de origen
   const routesForMap: Route[] = operacionesData?.vuelosActivos
     .filter(v => v.status === 'EN_VUELO') // Solo vuelos en el aire
-    .map(v => ({
-      id: v.id,
-      coordinates: v.route,
-      color: '#3b82f6', // Azul para vuelos en vuelo
-    })) || [];
+    .map(v => {
+      const color = getRouteColorByOrigin(v.origin);
+      console.log(`🛩️ Vuelo ${v.flightCode}:`);
+      console.log(`   - Origen: "${v.origin}" (primer char: "${v.origin[0]}")`);
+      console.log(`   - Destino: "${v.destination}"`);
+      console.log(`   - Color asignado: ${color}`);
+      return {
+        id: v.id,
+        coordinates: v.route,
+        color: color,
+      };
+    }) || [];
+
+  // Log resumen de todos los orígenes únicos
+  if (operacionesData?.vuelosActivos && operacionesData.vuelosActivos.length > 0) {
+    const origenes = [...new Set(operacionesData.vuelosActivos.map(v => v.origin))];
+    console.log('📍 TODOS LOS ORÍGENES ÚNICOS:', origenes);
+  }
 
   // Estadísticas
   const stats = operacionesData ? [
@@ -223,28 +356,126 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Toaster para notificaciones */}
-      <Toaster 
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            maxWidth: '500px',
-          },
-        }}
-      />
+      {/* Modal de Configuración de Inicio */}
+      {showStartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <Calendar className="w-8 h-8 text-[#FF6600]" />
+              <h2 className="text-2xl font-bold text-gray-800">Configurar Inicio de Operaciones</h2>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              Define la fecha y hora desde la cual comenzará la simulación de operaciones.
+            </p>
+
+            <div className="space-y-5">
+              {/* Fecha */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Fecha de Inicio
+                </label>
+                <input
+                  type="date"
+                  value={fechaInicio}
+                  onChange={(e) => setFechaInicio(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent text-lg"
+                  required
+                />
+              </div>
+
+              {/* Hora */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Hora de Inicio
+                </label>
+                <input
+                  type="time"
+                  value={horaInicio}
+                  onChange={(e) => setHoraInicio(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent text-lg"
+                  required
+                />
+              </div>
+
+              {/* Información adicional */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Nota:</strong> El sistema utilizará esta fecha/hora como punto de partida para la simulación. 
+                  El tiempo avanzará automáticamente a partir de este momento.
+                </p>
+              </div>
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => setShowStartModal(false)}
+                disabled={iniciando}
+                className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleIniciarOperaciones}
+                disabled={iniciando || !fechaInicio || !horaInicio}
+                className="flex-1 px-6 py-3 bg-[#FF6600] text-white rounded-lg font-semibold hover:bg-[#e55a00] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {iniciando ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Iniciando...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    Iniciar Simulación
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
-      <div className="bg-[#FF6600] text-white px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between">
+      <div className="bg-[#FF6600] text-white px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Panel de Operaciones Globales</h1>
-          <p className="text-lg mt-1">
+          <h1 className="text-2xl font-bold">Panel de Operaciones Globales</h1>
+          {operacionesData?.usandoTiempoSimulado && tiempoActual && (
+            <p className="text-xl font-bold mt-1">
+              ⏰ {tiempoActual}
+            </p>
+          )}
+          <p className="text-sm mt-0.5 opacity-75">
             {operacionesData?.activo 
-              ? `Monitoreo en tiempo real desde ${operacionesData.inicioOperaciones}` 
-              : 'Esperando inicio de operaciones...'}
+              ? `🟢 Activo desde ${operacionesData.inicioOperaciones}` 
+              : '⚪ Esperando inicio de operaciones...'}
           </p>
         </div>
-        <div className="flex gap-3 mt-4 lg:mt-0">
+        <div className="flex gap-3 mt-4 lg:mt-0 flex-wrap">
+          {/* Botón Iniciar/Detener Operaciones */}
+          {!operacionesData?.activo ? (
+            <button
+              onClick={handleAbrirModalInicio}
+              disabled={iniciando}
+              className="bg-green-600 text-white px-5 py-2.5 rounded-lg font-medium shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Play className="w-4 h-4" />
+              {iniciando ? 'Iniciando...' : 'Iniciar Operaciones'}
+            </button>
+          ) : (
+            <button
+              onClick={handleDetenerOperaciones}
+              disabled={deteniendo}
+              className="bg-red-600 text-white px-5 py-2.5 rounded-lg font-medium shadow hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Square className="w-4 h-4" />
+              {deteniendo ? 'Deteniendo...' : 'Detener Operaciones'}
+            </button>
+          )}
+          
+          {/* Botones de UI */}
           <button
             onClick={() => setShowStats(v => !v)}
             className="bg-white text-[#FF6600] px-4 py-2 rounded-lg font-medium shadow hover:bg-gray-100"
@@ -286,12 +517,20 @@ export default function Dashboard() {
             <MapboxMap 
               warehouses={legend.warehouses ? warehousesForMap : []} 
               routes={legend.routes ? routesForMap : []}
+              onWarehouseClick={handleWarehouseClick}
             >
               {/* AVIONES EN MOVIMIENTO */}
               {legend.planes && operacionesData?.vuelosActivos
                 .filter(v => v.status === 'EN_VUELO')
                 .map(vuelo => {
-                  const rotation = calculateRotation(vuelo.route);
+                  // Calcular rotación usando posición actual y destino
+                  const [originCoords, destCoords] = vuelo.route;
+                  const rotation = calculateRotation(
+                    vuelo.currentLat,
+                    vuelo.currentLng,
+                    destCoords[1], // destination latitude
+                    destCoords[0]  // destination longitude
+                  );
                   
                   return (
                     <Marker
@@ -299,21 +538,21 @@ export default function Dashboard() {
                       longitude={vuelo.currentLng}
                       latitude={vuelo.currentLat}
                     >
-                      <div className="relative group">
+                      <div 
+                        className="relative group cursor-pointer"
+                        onClick={() => handlePlaneClick(vuelo.flightCode)}
+                      >
                         {/* SVG del avión con rotación */}
                         <svg 
                           width="28" 
                           height="28" 
                           viewBox="0 0 24 24" 
                           className="drop-shadow-lg"
-                          style={{ 
-                            transform: `rotate(${rotation}deg)`,
-                            transformOrigin: 'center',
-                          }}
                         >
                           <path 
                             d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" 
                             fill="#3b82f6"
+                            transform={`rotate(${rotation} 12 12)`}
                           />
                         </svg>
 
@@ -368,11 +607,24 @@ export default function Dashboard() {
                       <svg width="16" height="16" viewBox="0 0 24 24">
                         <path d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" fill="#3b82f6"/>
                       </svg>
-                      <span>En vuelo</span>
+                      <span>Avión en vuelo</span>
+                    </li>
+                  </ul>
+
+                  {/* Rutas por continente */}
+                  <div className="text-xs font-semibold mb-2">Rutas por continente</div>
+                  <ul className="text-sm space-y-1 mb-3">
+                    <li className="flex items-center gap-2">
+                      <div className="w-8 h-0.5 border-t-2 border-dashed" style={{ borderColor: '#00CFFF' }}></div>
+                      <span>América</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <div className="w-8 h-0.5 border-t-2 border-dashed border-blue-500"></div>
-                      <span>Ruta de vuelo</span>
+                      <div className="w-8 h-0.5 border-t-2 border-dashed" style={{ borderColor: '#6F42C1' }}></div>
+                      <span>Europa</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <div className="w-8 h-0.5 border-t-2 border-dashed" style={{ borderColor: '#FF7A00' }}></div>
+                      <span>Asia</span>
                     </li>
                   </ul>
 

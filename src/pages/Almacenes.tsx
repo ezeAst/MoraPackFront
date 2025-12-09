@@ -5,6 +5,8 @@ import type { Almacen } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
 
 export default function Almacenes() {
+  const [searchParams] = useSearchParams();
+  
   const [warehouses, setWarehouses] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

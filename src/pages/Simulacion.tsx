@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Play, Pause, Square, Download,
-  ChevronDown, ChevronUp, Info
+  ChevronDown, ChevronUp, Info, Search, X
 } from 'lucide-react';
 import { Marker, Source, Layer } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
@@ -22,11 +22,15 @@ export default function Simulacion() {
     warehouses,
     metrics,
     events,
-    progress,
     currentTime,
     selectedScenario,
     startDateTime,
-    planningStatus,  // ← AGREGAR ESTA LÍNEA
+    planningStatus,
+    realTime,
+    simulatedElapsedTime,
+    realElapsedTime,
+    activeOrders,
+    recentlyDeliveredOrders,
     setSelectedScenario,
     setStartDateTime,
     startSimulation,
@@ -40,6 +44,18 @@ export default function Simulacion() {
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Estados para la búsqueda
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState<'order' | 'flight'>('order');
+  const [orderStatus, setOrderStatus] = useState<'planned' | 'delivered' | 'all'>('all');
+  const [searchResult, setSearchResult] = useState<{
+    type: 'order' | 'flight';
+    data: api.OrderSnapshot | api.Flight | null;
+  } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   // Mapeo de aeropuertos -> continente (por código y por nombre)
   const [airportsByCode, setAirportsByCode] = useState<Record<string, string>>({});
@@ -244,6 +260,68 @@ export default function Simulacion() {
     }
   };
 
+  // Función de búsqueda en memoria
+  const handleSearch = () => {
+    if (!searchQuery.trim()) {
+      setSearchError('Por favor ingrese un código o ID para buscar');
+      setSearchResult(null);
+      setHasSearched(true);
+      return;
+    }
+
+    setSearchError(null);
+    setSearchResult(null);
+    setHasSearched(true);
+    const query = searchQuery.trim().toUpperCase();
+
+    if (searchType === 'order') {
+      // Buscar en órdenes activas y entregadas
+      const allOrders = [...activeOrders, ...recentlyDeliveredOrders];
+      const found = allOrders.find(order => order.orderId.toUpperCase().includes(query));
+
+      if (found) {
+        // Filtrar por estado si no es 'all'
+        if (orderStatus === 'planned' && found.status !== 'pending' && found.status !== 'in_transit') {
+          setSearchError(`No se encontró un pedido planificado con ID que contenga "${searchQuery}"`);
+          setSearchResult(null);
+        } else if (orderStatus === 'delivered' && found.status !== 'delivered') {
+          setSearchError(`No se encontró un pedido entregado con ID que contenga "${searchQuery}"`);
+          setSearchResult(null);
+        } else {
+          setSearchResult({
+            type: 'order',
+            data: found
+          });
+        }
+      } else {
+        setSearchError(`No se encontró ningún pedido con ID que contenga "${searchQuery}"`);
+      }
+    } else {
+      // Buscar en vuelos
+      const found = flights.find(flight => 
+        flight.id.toUpperCase().includes(query) || 
+        flight.flightCode.toUpperCase().includes(query)
+      );
+
+      if (found) {
+        setSearchResult({
+          type: 'flight',
+          data: found
+        });
+      } else {
+        setSearchError(`No se encontró ninguna unidad de transporte con ID/código que contenga "${searchQuery}"`);
+      }
+    }
+  };
+
+  const closeSearchModal = () => {
+    setShowSearchModal(false);
+    setSearchQuery('');
+    setSearchResult(null);
+    setSearchError(null);
+    setHasSearched(false);
+  };
+
   console.log('🔍 Vuelos totales:', flights.length);
   console.log('🔍 Vuelos in_flight:', flights.filter(f => f.status === 'in_flight').length);
   console.log('🔍 Sample vuelo:', flights[0]);
@@ -349,14 +427,14 @@ const getPlaneAngle = (flight: api.Flight): number => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-[#FF6600] text-white px-6 py-5">
+    <div className="h-full bg-gray-50 overflow-hidden flex flex-col">
+      <div className="bg-[#FF6600] text-white px-6 py-5 flex-shrink-0">
         <h1 className="text-3xl font-bold">Simulación del sistema</h1>
         <p className="text-lg mt-1">Pruebe el rendimiento del sistema en diferentes escenarios</p>
       </div>
 
       {!showControlView ? (
-        <div className="p-6">
+        <div className="p-6 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1200px] grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Selección de escenario</h2>
@@ -453,8 +531,8 @@ const getPlaneAngle = (flight: api.Flight): number => {
           </div>
         </div>
       ) : (
-        <div className="p-0">
-          <div className="mx-auto bg-white shadow-lg overflow-hidden relative">
+        <div className="flex-1 relative overflow-hidden">
+          <div className="h-full bg-white shadow-lg relative">
             <div style={{ height: showTopBar ? 96 : 28 }} />
 
             <div
@@ -463,34 +541,74 @@ const getPlaneAngle = (flight: api.Flight): number => {
               }`}
             >
               <div className="bg-white/95 backdrop-blur rounded-t-2xl border-b shadow-sm">
-                <div className="px-6 pt-4 flex items-center justify-between">
+                {/* Header con título, estado y botones */}
+                <div className="px-6 pt-4 pb-4 flex items-center justify-between">
                   <h2 className="text-2xl font-bold text-gray-900">Panel de control</h2>
-                  <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
-                    Estado: {isRunning ? 'en ejecución' : 'pausado'}
-                  </p>
+                  
+                  <div className="flex items-center gap-4">
+                    <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
+                      Estado: {isRunning ? 'en ejecución' : 'pausado'}
+                    </p>
+                    
+                    <div className="flex items-center gap-2">
+                      {!isRunning ? (
+                        <button
+                          onClick={handleResume}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                        >
+                          <Play className="w-5 h-5" /> Reanudar
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handlePause}
+                          className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"
+                        >
+                          <Pause className="w-5 h-5" /> Pausar
+                        </button>
+                      )}
+                      <button
+                        onClick={handleStop}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                      >
+                        <Square className="w-5 h-5" /> Detener
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="px-6 pb-3 pt-3 flex flex-wrap items-center gap-3">
-                  {!isRunning ? (
+                
+                {/* Información de tiempos - ahora más grande */}
+                <div className="px-6 pb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
+                    <p className="text-xs font-semibold text-blue-700 mb-1">Tiempo simulado</p>
+                    <p className="text-sm font-mono text-gray-900">{currentTime || '---'}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg px-4 py-3 border border-green-200">
+                    <p className="text-xs font-semibold text-green-700 mb-1">Tiempo real</p>
+                    <p className="text-sm font-mono text-gray-900">{realTime || '---'}</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg px-4 py-3 border border-purple-200">
+                    <p className="text-xs font-semibold text-purple-700 mb-1">Transcurrido (sim)</p>
+                    <p className="text-sm font-mono text-gray-900">{simulatedElapsedTime}</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-lg px-4 py-3 border border-amber-200">
+                    <p className="text-xs font-semibold text-amber-700 mb-1">Transcurrido (real)</p>
+                    <p className="text-sm font-mono text-gray-900">{realElapsedTime}</p>
+                  </div>
+                </div>
+
+                {/* Barra de búsqueda */}
+                <div className="px-6 pb-4 border-t pt-4">
+                  <div className="flex items-center gap-3">
                     <button
-                      onClick={handleResume}
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                      onClick={() => setShowSearchModal(true)}
+                      className="px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] flex items-center gap-2 font-medium whitespace-nowrap"
                     >
-                      <Play className="w-5 h-5" /> Reanudar
+                      <Search className="w-4 h-4" /> Buscar
                     </button>
-                  ) : (
-                    <button
-                      onClick={handlePause}
-                      className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2"
-                    >
-                      <Pause className="w-5 h-5" /> Pausar
-                    </button>
-                  )}
-                  <button
-                    onClick={handleStop}
-                    className="ml-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-                  >
-                    <Square className="w-5 h-5" /> Detener
-                  </button>
+                    <p className="text-xs text-gray-500">
+                      Busque pedidos, envíos o unidades de transporte por ID
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -505,9 +623,9 @@ const getPlaneAngle = (flight: api.Flight): number => {
               </div>
             </div>
 
-            <div className="relative h-[calc(100vh-73px)] bg-gray-200">
+            <div className="absolute inset-0 bg-gray-200" style={{ top: showTopBar ? 96 : 28 }}>
                   <MapboxMap
-                    warehouses={warehouses}
+                    warehouses={warehouses as any}
                     routes={[]}
                   >
                   
@@ -758,12 +876,6 @@ const getPlaneAngle = (flight: api.Flight): number => {
                 )}
               </div>
 
-              {/* Barra inferior: padding-left para que no la tape el botón */}
-              <div className="absolute left-0 right-0 bottom-0 text-xs md:text-sm text-gray-700 flex justify-between px-4 pl-12 py-2 bg-white/80 backdrop-blur border-t">
-                <span>Progreso: {progress.toFixed(1)}%</span>
-                <span>Hora simulada: {currentTime}</span>
-              </div>
-
               <div className={`absolute top-0 right-0 h-full transition-transform duration-200 ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="bg-white shadow-xl w-[360px] h-full p-6 overflow-y-auto">
                   <div className="mb-4">
@@ -830,6 +942,281 @@ const getPlaneAngle = (flight: api.Flight): number => {
                   {showRightPanel ? '<' : '>'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de búsqueda */}
+      {showSearchModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header del modal */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Búsqueda en Simulación</h3>
+              <button
+                onClick={closeSearchModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Contenido del modal */}
+            <div className="p-6 space-y-4">
+              {/* Selector de tipo de búsqueda */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ¿Qué desea buscar?
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="searchType"
+                      value="order"
+                      checked={searchType === 'order'}
+                      onChange={(e) => setSearchType(e.target.value as 'order' | 'flight')}
+                      className="w-4 h-4 text-[#FF6600]"
+                    />
+                    <span className="text-sm text-gray-700">Pedido / Envío / Producto</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="searchType"
+                      value="flight"
+                      checked={searchType === 'flight'}
+                      onChange={(e) => setSearchType(e.target.value as 'order' | 'flight')}
+                      className="w-4 h-4 text-[#FF6600]"
+                    />
+                    <span className="text-sm text-gray-700">Unidad de transporte / Vuelo</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Filtro de estado (solo para pedidos) */}
+              {searchType === 'order' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Estado del pedido
+                  </label>
+                  <select
+                    value={orderStatus}
+                    onChange={(e) => setOrderStatus(e.target.value as 'planned' | 'delivered' | 'all')}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                  >
+                    <option value="all">Todos</option>
+                    <option value="planned">Planificado</option>
+                    <option value="delivered">Entregado</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Campo de búsqueda */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Código / ID
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                    placeholder={searchType === 'order' ? 'Ej: ORD-12345' : 'Ej: FLT-001'}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={!searchQuery.trim()}
+                    className="px-6 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
+                  >
+                    <Search className="w-4 h-4" />
+                    Buscar
+                  </button>
+                </div>
+              </div>
+
+              {/* Resultados */}
+              {hasSearched && (
+                <div className="mt-6 p-4 border rounded-lg">
+                  {searchError && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                      <p className="font-semibold">No se encontraron resultados</p>
+                      <p className="text-sm mt-1">{searchError}</p>
+                    </div>
+                  )}
+
+                  {searchResult && !searchError && (
+                    <div className="space-y-4">
+                      {searchResult.type === 'order' ? (
+                        // Resultado de pedido
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <h4 className="text-lg font-bold text-blue-900 mb-3 flex items-center gap-2">
+                            📦 Detalles del Pedido
+                          </h4>
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="font-semibold text-gray-700">ID del Pedido:</p>
+                              <p className="text-gray-900 font-mono">{(searchResult.data as api.OrderSnapshot).orderId}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Estado:</p>
+                              <p className={`font-semibold ${
+                                (searchResult.data as api.OrderSnapshot).status === 'delivered' ? 'text-green-600' :
+                                (searchResult.data as api.OrderSnapshot).status === 'in_transit' ? 'text-blue-600' :
+                                'text-amber-600'
+                              }`}>
+                                {(searchResult.data as api.OrderSnapshot).status === 'delivered' ? 'Entregado' :
+                                 (searchResult.data as api.OrderSnapshot).status === 'in_transit' ? 'En tránsito' :
+                                 'Planificado'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Cliente:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.OrderSnapshot).clientId}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Progreso:</p>
+                              <p className="text-gray-900">{((searchResult.data as api.OrderSnapshot).progressPercentage).toFixed(1)}%</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Destino:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.OrderSnapshot).destinationAirport}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Día / Hora simulado:</p>
+                              <p className="text-gray-900">Día {(searchResult.data as api.OrderSnapshot).day}, {String((searchResult.data as api.OrderSnapshot).hour).padStart(2, '0')}:{String((searchResult.data as api.OrderSnapshot).minute).padStart(2, '0')}</p>
+                            </div>
+                            {(searchResult.data as api.OrderSnapshot).deliveryTime && (
+                              <div className="col-span-2">
+                                <p className="font-semibold text-gray-700">Hora de entrega:</p>
+                                <p className="text-gray-900">{(searchResult.data as api.OrderSnapshot).deliveryTime}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Buscar vuelo asignado */}
+                          {(() => {
+                            const assignedFlight = flights.find(f => 
+                              f.packages && (searchResult.data as api.OrderSnapshot).destinationAirport === f.destination
+                            );
+                            return assignedFlight && (
+                              <div className="mt-4 pt-4 border-t border-blue-300">
+                                <h5 className="font-semibold text-blue-900 mb-2">✈️ Unidad de transporte asociada</h5>
+                                <div className="bg-white rounded p-3 text-sm">
+                                  <p><span className="font-semibold">ID de vuelo:</span> <span className="font-mono">{assignedFlight.id}</span></p>
+                                  <p><span className="font-semibold">Código:</span> <span className="font-mono">{assignedFlight.flightCode}</span></p>
+                                  <p><span className="font-semibold">Estado:</span> {assignedFlight.status}</p>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        // Resultado de vuelo
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <h4 className="text-lg font-bold text-green-900 mb-3 flex items-center gap-2">
+                            ✈️ Detalles de la Unidad de Transporte
+                          </h4>
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="font-semibold text-gray-700">ID de vuelo:</p>
+                              <p className="text-gray-900 font-mono">{(searchResult.data as api.Flight).id}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Código:</p>
+                              <p className="text-gray-900 font-mono">{(searchResult.data as api.Flight).flightCode}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Origen:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.Flight).origin}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Destino:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.Flight).destination}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Estado:</p>
+                              <p className={`font-semibold ${
+                                (searchResult.data as api.Flight).status === 'landed' ? 'text-green-600' :
+                                (searchResult.data as api.Flight).status === 'in_flight' ? 'text-blue-600' :
+                                'text-gray-600'
+                              }`}>
+                                {(searchResult.data as api.Flight).status === 'landed' ? 'Aterrizado' :
+                                 (searchResult.data as api.Flight).status === 'in_flight' ? 'En vuelo' :
+                                 'Programado'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Progreso:</p>
+                              <p className="text-gray-900">{((searchResult.data as api.Flight).progressPercentage).toFixed(1)}%</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Salida:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.Flight).departureTime}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Llegada:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.Flight).arrivalTime}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Capacidad:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.Flight).capacity} kg</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-700">Paquetes:</p>
+                              <p className="text-gray-900">{(searchResult.data as api.Flight).packages}</p>
+                            </div>
+                          </div>
+
+                          {/* Pedidos asignados a este vuelo */}
+                          {(() => {
+                            const assignedOrders = [
+                              ...activeOrders.filter(o => o.destinationAirport === (searchResult.data as api.Flight).destination),
+                              ...recentlyDeliveredOrders.filter(o => o.destinationAirport === (searchResult.data as api.Flight).destination)
+                            ];
+                            return assignedOrders.length > 0 && (
+                              <div className="mt-4 pt-4 border-t border-green-300">
+                                <h5 className="font-semibold text-green-900 mb-2">
+                                  📦 Pedidos para este destino ({assignedOrders.length})
+                                </h5>
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                  {assignedOrders.map((order, idx) => (
+                                    <div key={idx} className="bg-white rounded p-3 text-sm">
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <p><span className="font-semibold">ID:</span> <span className="font-mono">{order.orderId}</span></p>
+                                        <p><span className="font-semibold">Cliente:</span> {order.clientId}</p>
+                                        <p className="col-span-2"><span className="font-semibold">Estado:</span> {
+                                          order.status === 'delivered' ? '✓ Entregado' :
+                                          order.status === 'in_transit' ? '→ En tránsito' :
+                                          '⏳ Planificado'
+                                        }</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer del modal */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end">
+              <button
+                onClick={closeSearchModal}
+                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

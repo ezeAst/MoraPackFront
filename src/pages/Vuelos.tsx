@@ -32,9 +32,12 @@ function formatRemaining(seconds: number): string {
 }
 
 export default function Vuelos() {
+  const [searchParams] = useSearchParams();
+  
   const [flights, setFlights] = useState<VistaVuelo[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
   const [destinationFilter, setDestinationFilter] = useState<string>('Todos');
+  const [flightCodeFilter, setFlightCodeFilter] = useState<string>(''); // Nuevo filtro por código de vuelo
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<number | null>(null);
@@ -193,6 +196,20 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     };
   }, []);
 
+  // Efecto para aplicar filtro desde URL
+  useEffect(() => {
+    const vueloParam = searchParams.get('vuelo');
+    if (vueloParam && flights.length > 0) {
+      // Verificar que el vuelo exista en la lista
+      const vueloExiste = flights.some(f => f.flightCode === vueloParam);
+      if (vueloExiste) {
+        setFlightCodeFilter(vueloParam);
+        // También establecer el filtro de estado en "Activos" para mostrar el vuelo
+        setStatusFilter('Activos');
+      }
+    }
+  }, [searchParams, flights]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'PROGRAMADO': return 'bg-yellow-100 text-yellow-800';
@@ -211,12 +228,13 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     }
   };
 
-  // Filtrar vuelos por estado y destino
+  // Filtrar vuelos por estado, destino y código de vuelo
   const filteredFlights = flights.filter(f => {
     const matchesStatus = statusFilter === 'Todos' || statusFilter === f.status ||
       (statusFilter === 'Activos' && f.status === 'EN_VUELO');
     const matchesDestination = destinationFilter === 'Todos' || f.destination === destinationFilter;
-    return matchesStatus && matchesDestination;
+    const matchesFlightCode = !flightCodeFilter || f.flightCode.includes(flightCodeFilter);
+    return matchesStatus && matchesDestination && matchesFlightCode;
   });
 
   const statusCounts = {
@@ -293,6 +311,17 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
                     <option key={dest}>{dest}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-700">Código de vuelo</label>
+                <input
+                  type="text"
+                  value={flightCodeFilter}
+                  onChange={(e) => setFlightCodeFilter(e.target.value)}
+                  placeholder="Buscar por código..."
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
+                />
               </div>
             </div>
             <div className="flex items-center gap-3">
