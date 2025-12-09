@@ -22,7 +22,6 @@ export default function Simulacion() {
     warehouses,
     metrics,
     events,
-    progress,
     currentTime,
     selectedScenario,
     startDateTime,
@@ -352,14 +351,14 @@ const getPlaneAngle = (flight: api.Flight): number => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-[#FF6600] text-white px-6 py-5">
+    <div className="h-full bg-gray-50 overflow-hidden flex flex-col">
+      <div className="bg-[#FF6600] text-white px-6 py-5 flex-shrink-0">
         <h1 className="text-3xl font-bold">Simulación del sistema</h1>
         <p className="text-lg mt-1">Pruebe el rendimiento del sistema en diferentes escenarios</p>
       </div>
 
       {!showControlView ? (
-        <div className="p-6">
+        <div className="p-6 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1200px] grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Selección de escenario</h2>
@@ -456,8 +455,8 @@ const getPlaneAngle = (flight: api.Flight): number => {
           </div>
         </div>
       ) : (
-        <div className="p-0">
-          <div className="mx-auto bg-white shadow-lg overflow-hidden relative">
+        <div className="flex-1 relative overflow-hidden">
+          <div className="h-full bg-white shadow-lg relative">
             <div style={{ height: showTopBar ? 96 : 28 }} />
 
             <div
@@ -466,55 +465,59 @@ const getPlaneAngle = (flight: api.Flight): number => {
               }`}
             >
               <div className="bg-white/95 backdrop-blur rounded-t-2xl border-b shadow-sm">
-                <div className="px-6 pt-4 flex items-center justify-between">
+                {/* Header con título, estado y botones */}
+                <div className="px-6 pt-4 pb-4 flex items-center justify-between">
                   <h2 className="text-2xl font-bold text-gray-900">Panel de control</h2>
-                  <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
-                    Estado: {isRunning ? 'en ejecución' : 'pausado'}
-                  </p>
+                  
+                  <div className="flex items-center gap-4">
+                    <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
+                      Estado: {isRunning ? 'en ejecución' : 'pausado'}
+                    </p>
+                    
+                    <div className="flex items-center gap-2">
+                      {!isRunning ? (
+                        <button
+                          onClick={handleResume}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                        >
+                          <Play className="w-5 h-5" /> Reanudar
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handlePause}
+                          className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"
+                        >
+                          <Pause className="w-5 h-5" /> Pausar
+                        </button>
+                      )}
+                      <button
+                        onClick={handleStop}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                      >
+                        <Square className="w-5 h-5" /> Detener
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 
-                {/* Información de tiempos */}
-                <div className="px-6 py-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                  <div className="bg-blue-50 rounded px-2 py-1 border border-blue-200">
-                    <p className="font-semibold text-blue-700">Tiempo simulado</p>
-                    <p className="font-mono text-gray-900">{currentTime || '---'}</p>
+                {/* Información de tiempos - ahora más grande */}
+                <div className="px-6 pb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
+                    <p className="text-xs font-semibold text-blue-700 mb-1">Tiempo simulado</p>
+                    <p className="text-sm font-mono text-gray-900">{currentTime || '---'}</p>
                   </div>
-                  <div className="bg-green-50 rounded px-2 py-1 border border-green-200">
-                    <p className="font-semibold text-green-700">Tiempo real</p>
-                    <p className="font-mono text-gray-900">{realTime || '---'}</p>
+                  <div className="bg-green-50 rounded-lg px-4 py-3 border border-green-200">
+                    <p className="text-xs font-semibold text-green-700 mb-1">Tiempo real</p>
+                    <p className="text-sm font-mono text-gray-900">{realTime || '---'}</p>
                   </div>
-                  <div className="bg-purple-50 rounded px-2 py-1 border border-purple-200">
-                    <p className="font-semibold text-purple-700">Transcurrido (sim)</p>
-                    <p className="font-mono text-gray-900">{simulatedElapsedTime}</p>
+                  <div className="bg-purple-50 rounded-lg px-4 py-3 border border-purple-200">
+                    <p className="text-xs font-semibold text-purple-700 mb-1">Transcurrido (sim)</p>
+                    <p className="text-sm font-mono text-gray-900">{simulatedElapsedTime}</p>
                   </div>
-                  <div className="bg-amber-50 rounded px-2 py-1 border border-amber-200">
-                    <p className="font-semibold text-amber-700">Transcurrido (real)</p>
-                    <p className="font-mono text-gray-900">{realElapsedTime}</p>
+                  <div className="bg-amber-50 rounded-lg px-4 py-3 border border-amber-200">
+                    <p className="text-xs font-semibold text-amber-700 mb-1">Transcurrido (real)</p>
+                    <p className="text-sm font-mono text-gray-900">{realElapsedTime}</p>
                   </div>
-                </div>
-
-                <div className="px-6 pb-3 pt-3 flex flex-wrap items-center gap-3">
-                  {!isRunning ? (
-                    <button
-                      onClick={handleResume}
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
-                    >
-                      <Play className="w-5 h-5" /> Reanudar
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handlePause}
-                      className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2"
-                    >
-                      <Pause className="w-5 h-5" /> Pausar
-                    </button>
-                  )}
-                  <button
-                    onClick={handleStop}
-                    className="ml-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-                  >
-                    <Square className="w-5 h-5" /> Detener
-                  </button>
                 </div>
               </div>
 
@@ -529,7 +532,7 @@ const getPlaneAngle = (flight: api.Flight): number => {
               </div>
             </div>
 
-            <div className="relative h-[calc(100vh-73px)] bg-gray-200">
+            <div className="absolute inset-0 bg-gray-200" style={{ top: showTopBar ? 96 : 28 }}>
                   <MapboxMap
                     warehouses={warehouses as any}
                     routes={[]}
@@ -780,12 +783,6 @@ const getPlaneAngle = (flight: api.Flight): number => {
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* Barra inferior: padding-left para que no la tape el botón */}
-              <div className="absolute left-0 right-0 bottom-0 text-xs md:text-sm text-gray-700 flex justify-between px-4 pl-12 py-2 bg-white/80 backdrop-blur border-t">
-                <span>Progreso: {progress.toFixed(1)}%</span>
-                <span>Hora simulada: {currentTime}</span>
               </div>
 
               <div className={`absolute top-0 right-0 h-full transition-transform duration-200 ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}`}>

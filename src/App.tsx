@@ -33,17 +33,19 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 overflow-hidden flex flex-col">
       <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/pedidos" element={<Pedidos />} />
-        <Route path="/almacenes" element={<Almacenes />} />
-        <Route path="/vuelos" element={<Vuelos />} />
-        <Route path="/planificacion" element={<Planificacion />} />
-        <Route path="/simulacion" element={<Simulacion />} />
-      </Routes>
+      <div className="flex-1 overflow-hidden">
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/pedidos" element={<Pedidos />} />
+          <Route path="/almacenes" element={<Almacenes />} />
+          <Route path="/vuelos" element={<Vuelos />} />
+          <Route path="/planificacion" element={<Planificacion />} />
+          <Route path="/simulacion" element={<Simulacion />} />
+        </Routes>
+      </div>
     </div>
   );
 }
