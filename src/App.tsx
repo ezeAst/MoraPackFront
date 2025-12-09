@@ -4,7 +4,6 @@ import Dashboard from './pages/Dashboard';
 import Pedidos from './pages/Pedidos';
 import Almacenes from './pages/Almacenes';
 import Vuelos from './pages/Vuelos';
-import Planificacion from './pages/Planificacion';
 import Simulacion from './pages/Simulacion';
 import { SimulationProvider } from './contexts/SimulationContext';
 
@@ -13,23 +12,21 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Determinar el tab activo basado en la ruta
-  const getActiveTab = () => {
-    const path = location.pathname;
-    if (path.includes('/dashboard')) return 'dashboard';
-    if (path.includes('/pedidos')) return 'pedidos';
-    if (path.includes('/almacenes')) return 'almacenes';
-    if (path.includes('/vuelos')) return 'vuelos';
-    if (path.includes('/planificacion')) return 'planificacion';
-    if (path.includes('/simulacion')) return 'simulacion';
-    return 'dashboard';
-  };
-
-  const activeTab = getActiveTab();
-
-  // Función para cambiar de tab (actualiza la ruta)
-  const handleTabChange = (tab: string) => {
-    navigate(`/${tab}`);
+  const renderPage = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'pedidos':
+        return <Pedidos />;
+      case 'almacenes':
+        return <Almacenes />;
+      case 'vuelos':
+        return <Vuelos />;
+      case 'simulacion':
+        return <Simulacion />;
+      default:
+        return <Dashboard />;
+    }
   };
 
   return (

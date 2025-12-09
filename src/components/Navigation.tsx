@@ -17,7 +17,6 @@ export default function Navigation({ activeTab, onTabChange }: NavigationProps) 
     { id: 'pedidos', label: 'Pedidos' },
     { id: 'almacenes', label: 'Almacenes' },
     { id: 'vuelos', label: 'Vuelos' },
-    { id: 'planificacion', label: 'Planificacion' },
     { id: 'simulacion', label: 'Simulacion' }
   ];
 

@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Plane, Download, RefreshCcw, Package, X } from 'lucide-react';
+import { useState, useEffect, useRef, ChangeEvent  } from 'react';
+import { Plane, Download, RefreshCcw, Package, X, Filter , Upload } from 'lucide-react';
 import { getVuelosActivos, getPedidosEnVuelo, type PedidoEnVuelo } from '../services/apiOperaciones';
+import { uploadVuelosFile } from '../services/apiVuelos';
 
 // Intervalo de polling (ms)
 const POLLING_INTERVAL = 5000;
@@ -48,6 +48,49 @@ export default function Vuelos() {
   const [pedidosEnVuelo, setPedidosEnVuelo] = useState<PedidoEnVuelo[]>([]);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
   const [errorPedidos, setErrorPedidos] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    setIsUploading(true);   // botón “Cargando vuelos…”
+    setLoading(true);       // si quieres usar tu spinner general
+    setError(null);
+
+    const result = await uploadVuelosFile(file);
+
+    const registros = result.registrosCargados ?? 0;
+
+    // Mensaje emergente simple
+    window.alert(
+      `${result.mensaje ?? 'Carga de vuelos completada'}.\nVuelos cargados: ${registros}.`
+    );
+
+    // Recargar la tabla de vuelos
+    await fetchFlights(true);
+  } catch (err: any) {
+    console.error('Error subiendo archivo de vuelos:', err);
+    setError(err.message || 'Error al subir archivo de vuelos');
+    window.alert('Ocurrió un error al subir el archivo de vuelos.');
+  } finally {
+    setIsUploading(false);
+    setLoading(false);
+    // Permitir volver a seleccionar el mismo archivo
+    e.target.value = '';
+  }
+};
+
+
+
+
 
   // Cargar vuelos activos
   const fetchFlights = async (manual = false) => {
@@ -204,9 +247,37 @@ export default function Vuelos() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-[#FF6600] text-white px-8 py-6">
-        <h1 className="text-3xl font-bold">Monitoreo en tiempo real</h1>
-        <p className="text-lg mt-1">Rastrea todos los paquetes activos y su estado actual</p>
+      <div className="bg-[#FF6600] text-white px-8 py-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Monitoreo en tiempo real</h1>
+          <p className="text-lg mt-1">Rastrea todos los paquetes activos y su estado actual</p>
+        </div>
+        <div>
+          <button
+            onClick={handleUploadClick}
+            disabled={isUploading}
+            className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow 
+              ${isUploading 
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
+                : 'bg-white text-[#FF6600] hover:bg-gray-100'}`}
+          >
+            {!isUploading && <Upload className="w-4 h-4" />}
+            {isUploading ? 'Cargando vuelos…' : 'Cargar vuelos'}
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt "
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          {uploadMessage && (
+            <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-1">
+              {uploadMessage}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="p-8">
@@ -281,9 +352,7 @@ export default function Vuelos() {
               <button onClick={() => fetchFlights(true)} className="text-sm underline">Reintentar</button>
             </div>
           )}
-          {loading && !flights.length && (
-            <div className="mt-4 text-sm text-gray-500">Cargando vuelos...</div>
-          )}
+
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
