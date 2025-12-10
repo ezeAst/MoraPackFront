@@ -3,6 +3,7 @@ import { Filter, RefreshCw, Package, X,Upload  } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import type { Almacen } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
+import { useSearchParams } from 'react-router-dom';
 
 export default function Almacenes() {
   const [searchParams] = useSearchParams();

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, ChangeEvent  } from 'react';
 import { Plane, Download, RefreshCcw, Package, X, Filter , Upload } from 'lucide-react';
 import { getVuelosActivos, getPedidosEnVuelo, type PedidoEnVuelo } from '../services/apiOperaciones';
 import { uploadVuelosFile } from '../services/apiVuelos';
+import { useSearchParams } from 'react-router-dom';
 
 // Intervalo de polling (ms)
 const POLLING_INTERVAL = 5000;

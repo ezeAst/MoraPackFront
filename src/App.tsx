@@ -12,21 +12,22 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const renderPage = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'pedidos':
-        return <Pedidos />;
-      case 'almacenes':
-        return <Almacenes />;
-      case 'vuelos':
-        return <Vuelos />;
-      case 'simulacion':
-        return <Simulacion />;
-      default:
-        return <Dashboard />;
-    }
+  // Determinar el tab activo basado en la ruta
+  const getActiveTab = () => {
+    const path = location.pathname;
+    if (path.includes('/dashboard')) return 'dashboard';
+    if (path.includes('/pedidos')) return 'pedidos';
+    if (path.includes('/almacenes')) return 'almacenes';
+    if (path.includes('/vuelos')) return 'vuelos';
+    if (path.includes('/simulacion')) return 'simulacion';
+    return 'dashboard';
+  };
+
+  const activeTab = getActiveTab();
+
+  // Función para cambiar de tab (actualiza la ruta)
+  const handleTabChange = (tab: string) => {
+    navigate(`/${tab}`);
   };
 
   return (
@@ -39,13 +40,13 @@ function AppContent() {
           <Route path="/pedidos" element={<Pedidos />} />
           <Route path="/almacenes" element={<Almacenes />} />
           <Route path="/vuelos" element={<Vuelos />} />
-          <Route path="/planificacion" element={<Planificacion />} />
           <Route path="/simulacion" element={<Simulacion />} />
         </Routes>
       </div>
     </div>
   );
 }
+
 
 function App() {
   return (
