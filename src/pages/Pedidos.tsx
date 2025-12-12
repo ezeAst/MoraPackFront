@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Package, Clock, DollarSign } from 'lucide-react';
-import Papa from 'papaparse'; // Asegúrate de instalar papaparse: npm install papaparse
+import Papa from 'papaparse';
 import type { Order, Client, Route } from '../types';
 import { parsePedidosTxt } from '../utils/parsePedidosTxt';
-import { importarPedidos } from '../services/apiPedidos';
+import { importarPedidosCompleto } from '../services/apiPedidos';
 import { getDestinos } from '../services/apiDestinos';
 import { importarPedidosEnLotes } from '../services/apiPedidos'; // ✅ Cambiar import
 import type { Destino } from '../services/apiDestinos';
@@ -36,28 +36,20 @@ const MESES = [
   { value: 12, label: 'Diciembre' },
 ];
 
-// Almacenes principales (se excluyen de la planificación)
 const WAREHOUSE_ICAO = new Set(["SPIM", "EBCI", "UBBB"]);
 
-// (Opcional) mapa ICAO -> Ciudad visible en UI
 const ICAO_TO_CITY: Record<string, string> = {
   SPIM: "Lima",
   EBCI: "Bruselas",
   UBBB: "Baku",
-  // agrega más según tu lista de aeropuertos
 };
 
-// Regex exacto del formato
 const PEDIDO_RE = /^(\d{2})-(\d{2})-(\d{2})-([A-Z]{4})-(\d{3})-(\d{7})$/;
 
-// Validaciones de rango
 function isValidDay(dd: string)   { const v = +dd; return v >= 1 && v <= 31; }
 function isValidHour(hh: string)  { const v = +hh; return v >= 0 && v <= 23; }
 function isValidMin(mm: string)   { const v = +mm; return v >= 0 && v <= 59; }
 function isValidQty(q: string)    { const v = +q;  return v >= 1 && v <= 999; }
-
-
-
 
 let orderIdCounter = 103;
 let clientIdCounter = 4;
@@ -94,6 +86,11 @@ export default function Pedidos() {
     email: '',
     phone: ''
   });
+
+  // ✅ CAMBIO 1: Estado para múltiples archivos
+  const [files, setFiles] = useState<File[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     loadOrders();
@@ -160,61 +157,120 @@ const loadOrders = async () => {
     setClients(filtered);
   };
 
-  const [file, setFile] = useState<File | null>(null);
-  const [mes, setMes] = useState<number | ''>('');
-  const [loading, setLoading] = useState(false);
-
+  // ✅ CAMBIO 2: onSelect para múltiples archivos
   const onSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFile(e.target.files?.[0] ?? null);
+    const selectedFiles = e.target.files;
+    if (selectedFiles) {
+      setFiles(Array.from(selectedFiles));
+    }
   };
 
-
-  const [progress, setProgress] = useState(0);
+ // ================================================================
+// VERSIÓN ROBUSTA - Detecta y maneja archivos problemáticos
+// ================================================================
 
 const onUpload = async () => {
-  if (!file) { 
-    alert('Selecciona un TXT'); 
+  if (files.length === 0) { 
+    alert('Selecciona al menos un archivo TXT'); 
     return; 
+  }
+
+  // Solo permitir 1 archivo a la vez si es muy grande
+  const archivosGrandes = files.filter(f => f.size > 3 * 1024 * 1024); // >3MB
+  if (archivosGrandes.length > 0 && files.length > 1) {
+    alert(
+      `⚠️ Archivos grandes detectados:\n\n` +
+      archivosGrandes.map(f => `  - ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)`).join('\n') +
+      `\n\nPor favor, carga archivos grandes INDIVIDUALMENTE (uno a la vez).`
+    );
+    return;
   }
 
   setLoading(true);
   setProgress(0);
   
   try {
-    const txt = await file.text();
-    const pedidos = parsePedidosTxt(txt); // ✅ Ya no necesita mes
+    const todosPedidos: any[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      console.log(`📄 [${i + 1}/${files.length}] ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      
+      try {
+        const txt = await file.text();
+        const lines = txt.split('\n').filter(line => line.trim());
+        
+        console.log(`  📊 Total líneas: ${lines.length.toLocaleString()}`);
+        
+        // Procesar en chunks pequeños para evitar stack overflow
+        const CHUNK_SIZE = 5000;
+        let pedidosArchivo = 0;
+        
+        for (let j = 0; j < lines.length; j += CHUNK_SIZE) {
+          const chunk = lines.slice(j, j + CHUNK_SIZE).join('\n');
+          const pedidosChunk = parsePedidosTxt(chunk);
+          
+          if (pedidosChunk.length > 0) {
+            todosPedidos.push(...pedidosChunk);
+            pedidosArchivo += pedidosChunk.length;
+          }
+          
+          // Actualizar progreso
+          const fileProgress = ((j + CHUNK_SIZE) / lines.length) * 100;
+          const totalProgress = ((i + (fileProgress / 100)) / files.length) * 30;
+          setProgress(Math.round(totalProgress));
+          
+          // Pequeña pausa para no bloquear el navegador
+          await new Promise(resolve => setTimeout(resolve, 1));
+        }
+        
+        console.log(`  ✅ ${pedidosArchivo.toLocaleString()} pedidos parseados`);
+        
+      } catch (error: any) {
+        console.error(`  ❌ Error: ${error.message}`);
+        alert(`❌ Error procesando ${file.name}:\n\n${error.message}`);
+        return;
+      }
+    }
 
-    if (!pedidos.length) {
+    if (todosPedidos.length === 0) {
       alert('No se encontraron pedidos válidos.');
       return;
     }
 
-    console.log(`📦 Pedidos parseados: ${pedidos.length}`);
+    console.log(`📦 Total: ${todosPedidos.length.toLocaleString()} pedidos`);
 
-    // ✅ USAR IMPORTACIÓN POR LOTES
-    const resp = await importarPedidosEnLotes(pedidos, (prog) => {
-      setProgress(prog);
+    // Enviar al backend
+    setProgress(30);
+    const startTime = Date.now();
+    
+    const resp = await importarPedidosCompleto(todosPedidos, (prog) => {
+      setProgress(30 + Math.round((prog / 100) * 70));
     });
+    
+    const endTime = Date.now();
+    const tiempoTotal = endTime - startTime;
 
     alert(
-      `✅ Importación completada:\n` +
-      `- Insertados: ${resp.insertados}\n` +
-      `- Duplicados: ${resp.duplicados}\n` +
-      `- Errores: ${resp.errores}`
+      `✅ Importación completada:\n\n` +
+      `📦 Pedidos: ${resp.insertados.toLocaleString()}\n` +
+      `⚡ Tiempo: ${(tiempoTotal / 1000).toFixed(1)}s\n` +
+      `🚀 Velocidad: ${(resp.pedidosPorSegundo || 0).toLocaleString()} pedidos/seg`
     );
 
-    // Limpiar file input
     const inputEl = document.getElementById('file-pedidos') as HTMLInputElement | null;
     if (inputEl) inputEl.value = '';
-    setFile(null);
+    setFiles([]);
     setProgress(0);
+    
   } catch (e: any) {
-    alert(e.message || 'Error al importar pedidos');
+    console.error('Error:', e);
+    alert(`❌ Error: ${e.message}`);
   } finally {
     setLoading(false);
+    setProgress(0);
   }
 };
-
 
   const handleRegisterClient = () => {
     const newId = String(clientIdCounter++);
@@ -306,7 +362,6 @@ const onUpload = async () => {
       alert(e.message || 'Error al registrar pedido');
     }
   };
-
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -410,7 +465,6 @@ const onUpload = async () => {
                   <option value="">
                     {destinosLoading ? 'Cargando destinos...' : 'Selecciona destino'}
                   </option>
-
                   {destinosError && (
                     <option value="" disabled>
                       {destinosError}
@@ -482,7 +536,7 @@ const onUpload = async () => {
               </div>
             )}
 
-            {/* Card para carga masiva de pedidos */}
+            {/* ✅ CAMBIO 4: Card mejorado para carga masiva múltiple */}
             <div className="bg-white rounded-2xl shadow-lg p-6 mt-6">
               <div className="flex items-center gap-3 mb-4">
                 <Package className="w-6 h-6 text-[#0066FF]" />
@@ -490,15 +544,51 @@ const onUpload = async () => {
               </div>
               <div className="border-2 border-dashed border-[#0066FF] rounded-lg p-6 flex flex-col mt-2 items-center justify-center bg-blue-50">
                 <input
+                  id="file-pedidos"
                   type="file"
                   accept=".csv,.txt"
+                  multiple
                   onChange={onSelect}
                   className="mb-4"
                 />
-                <span className="text-xs text-gray-500 mb-4">Arrastra o selecciona un archivo CSV/TXT con los pedidos</span>
-                    <button onClick={onUpload} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">
-                      {loading ? `Procesando... ${progress}%` : 'Cargar pedidos masivos'}
-                    </button>
+                
+                <span className="text-xs text-gray-500 mb-4">
+                  {files.length > 0 
+                    ? `${files.length} archivo(s) seleccionado(s)` 
+                    : 'Arrastra o selecciona uno o varios archivos CSV/TXT con los pedidos'}
+                </span>
+
+                {/* Lista de archivos seleccionados */}
+                {files.length > 0 && (
+                  <div className="w-full mb-4 max-w-md">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">
+                      Archivos seleccionados:
+                    </p>
+                    <ul className="text-xs text-gray-600 space-y-1 max-h-32 overflow-y-auto bg-white p-3 rounded border border-gray-200">
+                      {files.map((file, idx) => (
+                        <li key={idx} className="flex items-center gap-2">
+                          <span className="text-blue-600">📄</span>
+                          <span className="flex-1 truncate">{file.name}</span>
+                          <span className="text-gray-400 text-[10px]">
+                            ({(file.size / 1024).toFixed(1)} KB)
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <button 
+                  onClick={onUpload} 
+                  disabled={loading || files.length === 0} 
+                  className="px-6 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  {loading 
+                    ? `Procesando... ${progress}%` 
+                    : files.length > 0 
+                      ? `Cargar ${files.length} archivo(s)` 
+                      : 'Cargar pedidos masivos'}
+                </button>
               </div>
             </div>
           </div>
