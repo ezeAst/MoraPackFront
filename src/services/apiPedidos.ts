@@ -1,7 +1,7 @@
 import type { PedidoDTO } from '../utils/parsePedidosTxt';
 
-//const API_BASE = import.meta.env.VITE_API_URL || '/api';
-const API_BASE = "http://localhost:8080/api"
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
+//const API_BASE = "http://localhost:8080/api"
 
 export type PedidoEvent = {
   id: string;
@@ -88,4 +88,48 @@ export async function getPedidosPorAlmacen(codigoAlmacen: string): Promise<Pedid
     throw new Error(`Error al obtener pedidos del almacén ${codigoAlmacen}`);
   }
   return res.json();
+}
+
+
+export type CreatePedidoPayload = {
+  client_id: string;          // tu ID numérico escrito
+  product_quantity: number;
+  destination_codigo: string; // ICAO destino (ej. SKBO)
+  created_at: string;         // fecha/hora ajustada (YYYY-MM-DDTHH:mm:ss)
+};
+
+export async function crearPedido(payload: {
+  id_cliente: string;
+  cantidad: number;
+  aeropuerto_destino: string;
+  created_at: string;
+}) {
+  const resp = await fetch(`${API_BASE}/pedidos/insertar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    throw new Error(data?.mensaje || "Error al registrar pedido");
+  }
+
+  return data; // { id, mensaje } o lo que devuelva tu backend
+}
+
+
+export type PedidoReciente = {
+  id: number;
+  aeropuerto_destino: string;
+  cantidad: number;
+  id_cliente: string;
+};
+
+export async function getPedidosRecientes(limit = 3): Promise<PedidoReciente[]> {
+  const resp = await fetch(`${API_BASE}/pedidos/recientes?limit=${limit}`);
+  const data = await resp.json().catch(() => []);
+  if (!resp.ok) throw new Error(data?.mensaje || "No se pudo cargar pedidos recientes");
+  return data;
 }

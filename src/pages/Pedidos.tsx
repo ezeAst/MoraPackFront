@@ -6,8 +6,9 @@ import { parsePedidosTxt } from '../utils/parsePedidosTxt';
 import { importarPedidos } from '../services/apiPedidos';
 import { getDestinos } from '../services/apiDestinos';
 import { importarPedidosEnLotes } from '../services/apiPedidos'; // ✅ Cambiar import
-
-
+import type { Destino } from '../services/apiDestinos';
+import { crearPedido } from '../services/apiPedidos';
+import { getPedidosRecientes } from "../services/apiPedidos";
 
 const MOCK_CLIENTS: Client[] = [
   { id: '1', first_name: 'Juan', last_name: 'Pérez', birth_date: '1990-01-01', email: 'juan@example.com', phone: '123456789', created_at: '2025-10-01T09:00:00Z' },
@@ -69,15 +70,22 @@ export default function Pedidos() {
   const [searchTerm, setSearchTerm] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
   const [calculatedRoute, setCalculatedRoute] = useState<Route | null>(null);
-  const [destinos, setDestinos] = useState<string[]>([]);
+  const [destinos, setDestinos] = useState<Destino[]>([]);
+  const [selectedDestino, setSelectedDestino] = useState<Destino | null>(null);
   const [destinosLoading, setDestinosLoading] = useState(false);
   const [destinosError, setDestinosError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
+  /*const [formData, setFormData] = useState({
     productQuantity: '',
     destinationCity: '',
     deliveryDate: ''
-  });
+  });*/
+
+  const [formData, setFormData] = useState({
+  clientId: '',          // nuevo
+  productQuantity: '',
+  destinationCity: '',
+});
 
   const [newClient, setNewClient] = useState({
     firstName: '',
@@ -96,6 +104,8 @@ export default function Pedidos() {
         setDestinosError(null);
         const data = await getDestinos();
         setDestinos(data);
+        console.log('DESTINOS:', data);
+        console.log('PRIMER DESTINO:', data?.[0]);
       } catch (e: any) {
         setDestinosError(e.message || 'Error cargando destinos');
       } finally {
@@ -104,9 +114,44 @@ export default function Pedidos() {
     })();
   }, []);
 
-  const loadOrders = () => {
-    setOrders([...MOCK_ORDERS].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5));
-  };
+const loadOrders = async () => {
+  try {
+    const rec = await getPedidosRecientes(3);
+
+    const uiOrders: Order[] = rec.map((p) => ({
+      id: String(p.id),
+      order_code: `PED-${p.id}`,
+      client_id: p.id_cliente,
+      product_quantity: p.cantidad,
+      destination_city: p.aeropuerto_destino, // luego si quieres lo mapeamos a nombre
+      delivery_date: "",
+      status: "processing",
+      created_at: '???',
+    }));
+
+    setOrders(uiOrders);
+  } catch (e) {
+    console.error(e);
+    setOrders([]); // si falla, que no rompa la pantalla
+  }
+};
+
+  useEffect(() => {
+    loadOrders();
+
+    (async () => {
+      try {
+        setDestinosLoading(true);
+        setDestinosError(null);
+        const data = await getDestinos();
+        setDestinos(data);
+      } catch (e: any) {
+        setDestinosError(e.message || "Error cargando destinos");
+      } finally {
+        setDestinosLoading(false);
+      }
+    })();
+  }, []);
 
   const searchClients = () => {
     const filtered = MOCK_CLIENTS.filter(c =>
@@ -206,30 +251,60 @@ const onUpload = async () => {
     });
   };
 
-  const handleRegisterOrder = () => {
-    if (!selectedClient || !formData.productQuantity || !formData.destinationCity || !formData.deliveryDate) {
+  const handleRegisterOrder = async () => {
+    if (!formData.clientId || !formData.productQuantity || !selectedDestino) {
       alert('Por favor completa todos los campos');
       return;
     }
 
-    const orderCode = `MPE-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
-    const newOrder: Order = {
-      id: String(orderIdCounter++),
-      order_code: orderCode,
-      client_id: selectedClient.id,
-      product_quantity: parseInt(formData.productQuantity),
-      destination_city: formData.destinationCity,
-      delivery_date: formData.deliveryDate,
-      status: 'processing',
-      created_at: new Date().toISOString()
-    };
-    MOCK_ORDERS.unshift(newOrder);
+    const qty = Number(formData.productQuantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      alert('Cantidad inválida');
+      return;
+    }
 
-    setFormData({ productQuantity: '', destinationCity: '', deliveryDate: '' });
-    setSelectedClient(null);
-    setCalculatedRoute(null);
-    loadOrders();
-    alert('Pedido registrado exitosamente');
+    // ✅ fecha/hora ajustada al destino usando husoHorario de la BD
+    const createdAtDestino = getOrderDateForOffset(selectedDestino.husoHorario);
+
+    try {
+      // ✅ Llamada al backend
+      const resp = await crearPedido({
+        id_cliente: formData.clientId,
+        cantidad: qty,
+        aeropuerto_destino: selectedDestino.codigo,
+        created_at: createdAtDestino,
+      });
+
+      // ✅ (Opcional) actualiza pedidos recientes en UI con algo “seguro”
+      // Si tu backend devuelve el pedido completo, úsalo tal cual.
+      // Si solo devuelve id/codigo, armamos uno mínimo para la lista.
+      const orderForUI = {
+        id: String(resp.id ?? Date.now()),
+        order_code: resp.order_code ?? 'Pedido ',
+        client_id: formData.clientId,
+        product_quantity: qty,
+        destination_city: selectedDestino.nombre,
+        delivery_date: '',
+        status: 'processing',
+        created_at: createdAtDestino,
+      } as Order;
+
+      setOrders((prev) =>
+        [orderForUI, ...prev]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
+          .slice(0, 5)
+      );
+
+      // ✅ limpiar
+      setFormData({ clientId: '', productQuantity: '', destinationCity: '' });
+      setSelectedDestino(null);
+      setCalculatedRoute(null);
+
+      alert(`✅ Pedido registrado correctamente.\n`);
+      await loadOrders();
+    } catch (e: any) {
+      alert(e.message || 'Error al registrar pedido');
+    }
   };
 
 
@@ -251,11 +326,36 @@ const onUpload = async () => {
     }
   };
 
+  function getOrderDateForOffset(destOffsetHours: number): string {
+    const now = new Date(); // hora local del navegador
+
+    // offset local en minutos (Perú suele ser +300)
+    const localOffsetMinutes = now.getTimezoneOffset();
+
+    // local -> UTC
+    const utcMillis = now.getTime() + localOffsetMinutes * 60 * 1000;
+
+    // UTC -> destino
+    const destMillis = utcMillis + destOffsetHours * 60 * 60 * 1000;
+    const destDate = new Date(destMillis);
+
+    const pad = (n: number) => n.toString().padStart(2, '0');
+
+    // YYYY-MM-DDTHH:mm:ss
+    return `${destDate.getFullYear()}-${pad(destDate.getMonth() + 1)}-${pad(
+      destDate.getDate()
+    )}T${pad(destDate.getHours())}:${pad(destDate.getMinutes())}:${pad(
+      destDate.getSeconds()
+    )}`;
+  }
+
+
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-[#FF6600] text-white px-8 py-6">
         <h1 className="text-3xl font-bold">Registro de pedidos</h1>
-        <p className="text-lg mt-1">Registra nuevos envíos de productos MPE y calcular rutas óptimas</p>
+        <p className="text-lg mt-1">Registra nuevos envíos de productos MPE</p>
       </div>
 
       <div className="p-8">
@@ -268,29 +368,20 @@ const onUpload = async () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Cliente</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={selectedClient ? `${selectedClient.first_name} ${selectedClient.last_name}` : ''}
-                    placeholder="Selecciona un cliente"
-                    readOnly
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
-                  />
-                  <button
-                    onClick={() => setShowClientSearch(true)}
-                    className="px-6 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium"
-                  >
-                    Buscar
-                  </button>
-                </div>
-                <button
-                  onClick={() => setShowNewClientModal(true)}
-                  className="text-[#0066FF] text-sm mt-2 hover:underline"
-                >
-                  Registrar nuevo cliente
-                </button>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  ID del Cliente
+                </label>
+                <input
+                  type="text"
+                  value={formData.clientId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, clientId: e.target.value })
+                  }
+                  placeholder="Ingrese ID de cliente (ej. 0034867)"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                />
               </div>
+
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Cantidad de Productos MPE</label>
@@ -306,10 +397,14 @@ const onUpload = async () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ciudad Destino</label>
                 <select
-                  value={formData.destinationCity}
-                  onChange={(e) =>
-                    setFormData({ ...formData, destinationCity: e.target.value })
-                  }
+                 
+                  value={selectedDestino?.codigo ?? ''}
+                  onChange={(e) => {
+                    const codigo = e.target.value;
+                    const destino = destinos.find((d) => d.codigo === codigo) || null;
+                    setSelectedDestino(destino);
+                    setFormData({ ...formData, destinationCity: destino?.nombre ?? '' });
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
                 >
                   <option value="">
@@ -322,14 +417,14 @@ const onUpload = async () => {
                     </option>
                   )}
 
-                  {destinos.map((ciudad) => (
-                    <option key={ciudad} value={ciudad}>
-                      {ciudad}
+                  {destinos.map((d) => (
+                    <option key={d.codigo} value={d.codigo}>
+                      {d.nombre}
                     </option>
                   ))}
                 </select>
-
               </div>
+
 
               <button
                 onClick={handleRegisterOrder}
@@ -347,7 +442,7 @@ const onUpload = async () => {
                 {orders.map((order) => (
                   <div key={order.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-gray-800">{order.order_code}</span>
+                      <span className="font-bold text-gray-800">Pedido #{order.id}</span>
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
                         {getStatusLabel(order.status)}
                       </span>
