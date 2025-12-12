@@ -1,6 +1,6 @@
 // Base URL del backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-//const API_BASE_URL = "http://localhost:8080/api"
+//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = "http://localhost:8080/api"
 // ==================== TIPOS ====================
 
 export type SimulationType = 'weekly' | 'stress_test';
@@ -27,6 +27,28 @@ export interface Flight {
   capacity: number;
   status: FlightStatus;
   progressPercentage: number;
+  orderIds?: string[];
+}
+
+export interface OutgoingFlight {
+  id: string;
+  flightCode: string;
+  destination: string;
+  departureTime: string;
+  arrivalTime: string;
+  status: FlightStatus;
+  packages: number;
+  capacity: number;
+  occupancyPercentage: number;
+}
+
+export interface OutgoingOrder {
+  orderId: string;
+  destination: string;
+  flightCode: string;
+  departureTime: string;
+  weight: number;
+  registeredTime: string;
 }
 
 export interface Warehouse {
@@ -42,6 +64,8 @@ export interface Warehouse {
   occupancyPercentage: number;
   productsInTransit: number;
   productsAtDestination: number;
+  outgoingFlights?: OutgoingFlight[];
+  outgoingOrders?: OutgoingOrder[];
 }
 
 export interface SimulationMetrics {

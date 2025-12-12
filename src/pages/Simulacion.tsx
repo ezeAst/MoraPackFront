@@ -428,11 +428,6 @@ const getPlaneAngle = (flight: api.Flight): number => {
 
   return (
     <div className="h-full bg-gray-50 overflow-hidden flex flex-col">
-      <div className="bg-[#FF6600] text-white px-6 py-5 flex-shrink-0">
-        <h1 className="text-3xl font-bold">Simulación del sistema</h1>
-        <p className="text-lg mt-1">Pruebe el rendimiento del sistema en diferentes escenarios</p>
-      </div>
-
       {!showControlView ? (
         <div className="p-6 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1200px] grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -533,81 +528,56 @@ const getPlaneAngle = (flight: api.Flight): number => {
       ) : (
         <div className="flex-1 relative overflow-hidden">
           <div className="h-full bg-white shadow-lg relative">
-            <div style={{ height: showTopBar ? 96 : 28 }} />
+            <div style={{ height: showTopBar ? 80 : 28 }} />
 
             <div
               className={`absolute top-0 left-0 right-0 z-20 transition-transform duration-200 ${
                 showTopBar ? 'translate-y-0' : '-translate-y-full'
               }`}
             >
-              <div className="bg-white/95 backdrop-blur rounded-t-2xl border-b shadow-sm">
-                {/* Header con título, estado y botones */}
-                <div className="px-6 pt-4 pb-4 flex items-center justify-between">
-                  <h2 className="text-2xl font-bold text-gray-900">Panel de control</h2>
-                  
+              <div className="bg-white/95 backdrop-blur border-b shadow-sm">
+                {/* Header compacto */}
+                <div className="px-4 py-2 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <p className={`font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
-                      Estado: {isRunning ? 'en ejecución' : 'pausado'}
+                    <h2 className="text-lg font-bold text-gray-900">Panel de control</h2>
+                    <p className={`text-sm font-semibold ${isRunning ? 'text-green-600' : 'text-amber-600'}`}>
+                      {isRunning ? '● En ejecución' : '● Pausado'}
                     </p>
-                    
-                    <div className="flex items-center gap-2">
-                      {!isRunning ? (
-                        <button
-                          onClick={handleResume}
-                          className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
-                        >
-                          <Play className="w-5 h-5" /> Reanudar
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handlePause}
-                          className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"
-                        >
-                          <Pause className="w-5 h-5" /> Pausar
-                        </button>
-                      )}
-                      <button
-                        onClick={handleStop}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-                      >
-                        <Square className="w-5 h-5" /> Detener
-                      </button>
-                    </div>
                   </div>
-                </div>
-                
-                {/* Información de tiempos - ahora más grande */}
-                <div className="px-6 pb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
-                    <p className="text-xs font-semibold text-blue-700 mb-1">Tiempo simulado</p>
-                    <p className="text-sm font-mono text-gray-900">{currentTime || '---'}</p>
-                  </div>
-                  <div className="bg-green-50 rounded-lg px-4 py-3 border border-green-200">
-                    <p className="text-xs font-semibold text-green-700 mb-1">Tiempo real</p>
-                    <p className="text-sm font-mono text-gray-900">{realTime || '---'}</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg px-4 py-3 border border-purple-200">
-                    <p className="text-xs font-semibold text-purple-700 mb-1">Transcurrido (sim)</p>
-                    <p className="text-sm font-mono text-gray-900">{simulatedElapsedTime}</p>
-                  </div>
-                  <div className="bg-amber-50 rounded-lg px-4 py-3 border border-amber-200">
-                    <p className="text-xs font-semibold text-amber-700 mb-1">Transcurrido (real)</p>
-                    <p className="text-sm font-mono text-gray-900">{realElapsedTime}</p>
-                  </div>
-                </div>
-
-                {/* Barra de búsqueda */}
-                <div className="px-6 pb-4 border-t pt-4">
-                  <div className="flex items-center gap-3">
+                  
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => setShowSearchModal(true)}
-                      className="px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] flex items-center gap-2 font-medium whitespace-nowrap"
+                      className="px-3 py-1.5 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] flex items-center gap-2 text-sm"
                     >
                       <Search className="w-4 h-4" /> Buscar
                     </button>
-                    <p className="text-xs text-gray-500">
-                      Busque pedidos, envíos o unidades de transporte por ID
-                    </p>
+                    <button
+                      onClick={handleStop}
+                      className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm"
+                    >
+                      <Square className="w-4 h-4" /> Detener
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Indicadores de tiempo compactos */}
+                <div className="px-4 pb-2 grid grid-cols-4 gap-2">
+                  <div className="bg-blue-50 rounded px-3 py-1.5 border border-blue-200">
+                    <p className="text-[10px] font-semibold text-blue-700">Tiempo simulado</p>
+                    <p className="text-xs font-mono text-gray-900">{currentTime || '---'}</p>
+                  </div>
+                  <div className="bg-green-50 rounded px-3 py-1.5 border border-green-200">
+                    <p className="text-[10px] font-semibold text-green-700">Tiempo real</p>
+                    <p className="text-xs font-mono text-gray-900">{realTime || '---'}</p>
+                  </div>
+                  <div className="bg-purple-50 rounded px-3 py-1.5 border border-purple-200">
+                    <p className="text-[10px] font-semibold text-purple-700">Transcurrido (sim)</p>
+                    <p className="text-xs font-mono text-gray-900">{simulatedElapsedTime}</p>
+                  </div>
+                  <div className="bg-amber-50 rounded px-3 py-1.5 border border-amber-200">
+                    <p className="text-[10px] font-semibold text-amber-700">Transcurrido (real)</p>
+                    <p className="text-xs font-mono text-gray-900">{realElapsedTime}</p>
                   </div>
                 </div>
               </div>
@@ -623,40 +593,48 @@ const getPlaneAngle = (flight: api.Flight): number => {
               </div>
             </div>
 
-            <div className="absolute inset-0 bg-gray-200" style={{ top: showTopBar ? 96 : 28 }}>
+            <div className="absolute inset-0 bg-gray-200" style={{ top: showTopBar ? 80 : 28 }}>
                   <MapboxMap
                     warehouses={warehouses as any}
                     routes={[]}
                   >
                   
               {/* Rutas de vuelos */}
-              {/* Rutas de vuelos */}
-              {legend.routes && Object.keys(airportsByCode).length > 0 && filteredFlights.map((flight) => (
-                <Source
-                  key={`route-${flight.id}`}
-                  id={`route-${flight.id}`}
-                  type="geojson"
-                  data={{
-                    type: 'Feature',
-                    properties: {},
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: flight.route
-                    }
-                  }}
-                >
-                  <Layer
-                    id={`route-layer-${flight.id}`}
-                    type="line"
-                    paint={{
-                      'line-width': 2,
-                      'line-color': getRouteColor(flight),
-                      'line-dasharray': [2, 2],
-                      'line-opacity': 0.6
+              {legend.routes && Object.keys(airportsByCode).length > 0 && filteredFlights.map((flight) => {
+                // Calcular la ruta restante (desde posición actual hasta destino)
+                const currentPosition: [number, number] = [flight.currentLng, flight.currentLat];
+                const destination: [number, number] = flight.route[flight.route.length - 1];
+                
+                // La ruta restante es desde la posición actual hasta el destino
+                const remainingRoute: [number, number][] = [currentPosition, destination];
+                
+                return (
+                  <Source
+                    key={`route-${flight.id}`}
+                    id={`route-${flight.id}`}
+                    type="geojson"
+                    data={{
+                      type: 'Feature',
+                      properties: {},
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: remainingRoute
+                      }
                     }}
-                  />
-                </Source>
-              ))
+                  >
+                    <Layer
+                      id={`route-layer-${flight.id}`}
+                      type="line"
+                      paint={{
+                        'line-width': 2,
+                        'line-color': getRouteColor(flight),
+                        'line-dasharray': [2, 2],
+                        'line-opacity': 0.6
+                      }}
+                    />
+                  </Source>
+                );
+              })
               }
                               {/* Vuelos en tiempo real (filtrados por origen) */}
                 {legend.planes && filteredFlights.map((flight) => {
@@ -743,12 +721,33 @@ const getPlaneAngle = (flight: api.Flight): number => {
                       </svg>
 
                       {typeof pc.pct === 'number' && (
-                        <div className="absolute left-1/2 -translate-x-1/2 -bottom-12 bg-black/80 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap shadow-lg">
+                        <div className="absolute left-1/2 -translate-x-1/2 -bottom-12 bg-black/80 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none shadow-lg min-w-[200px] max-w-[280px]">
                           <div className="font-semibold text-center mb-1">{flight.flightCode || flight.id}</div>
-                          <div className="text-[10px] text-gray-300">{flight.origin} → {flight.destination}</div>
+                          <div className="text-[10px] text-gray-300 text-center">{flight.origin} → {flight.destination}</div>
                           <div className="text-[10px] mt-1 text-center border-t border-gray-600 pt-1">
                             {pc.current}/{pc.capacity} kg ({pc.pct.toFixed(0)}%)
                           </div>
+                          
+                          {/* Lista de pedidos en el vuelo - máximo 5 sin scroll */}
+                          {flight.orderIds && flight.orderIds.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-600">
+                              <div className="text-[10px] text-gray-400 mb-1">
+                                Pedidos ({Math.min(flight.orderIds.length, 5)}{flight.orderIds.length > 5 ? '+' : ''})
+                              </div>
+                              <div className="space-y-0.5 text-[10px]">
+                                {flight.orderIds.slice(0, 5).map((orderId: string, idx: number) => (
+                                  <div key={idx} className="text-gray-300 font-mono">
+                                    • {orderId}
+                                  </div>
+                                ))}
+                                {flight.orderIds.length > 5 && (
+                                  <div className="text-gray-400 italic mt-1">
+                                    ... y {flight.orderIds.length - 5} más
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -759,14 +758,6 @@ const getPlaneAngle = (flight: api.Flight): number => {
               </MapboxMap>
 
 
-
-              {/* Banner de planificación en progreso */}
-                {planningStatus && (
-                  <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-30 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    <span className="font-medium">{planningStatus}</span>
-                  </div>
-                )}
 
               {/* Botón de Leyenda: solo ícono */}
               <div className="fixed left-3 bottom-3 z-30">
@@ -885,6 +876,68 @@ const getPlaneAngle = (flight: api.Flight): number => {
                     <p className="text-sm text-gray-600">Tipo: {selectedScenario === 'weekly' ? 'Semanal' : 'Prueba de colapso'}</p>
                     <p className="text-sm text-gray-600">Vuelos activos: {flights.length}</p>
                   </div>
+
+                  {/* Indicador de Flota */}
+                  {(() => {
+                    // Calcular estadísticas de la flota
+                    const activeFlights = flights.filter(f => f.status === 'in_flight');
+                    const totalCapacity = activeFlights.reduce((sum, f) => sum + (f.capacity || 0), 0);
+                    const totalCurrent = activeFlights.reduce((sum, f) => sum + (f.packages || 0), 0);
+                    const fleetOccupancy = totalCapacity > 0 ? (totalCurrent / totalCapacity) * 100 : 0;
+                    
+                    // Determinar color según semáforo
+                    let fleetColor = '#22c55e'; // Verde < 70%
+                    let fleetStatus = '< 70% capacidad';
+                    if (fleetOccupancy >= 90) {
+                      fleetColor = '#ef4444'; // Rojo > 90%
+                      fleetStatus = '> 90% capacidad';
+                    } else if (fleetOccupancy >= 70) {
+                      fleetColor = '#eab308'; // Amarillo 70-90%
+                      fleetStatus = '70-90% capacidad';
+                    }
+                    
+                    return (
+                      <div className="mb-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-3">Estado de la Flota</h3>
+                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-gray-700">Ocupación total</span>
+                            <div className="flex items-center gap-2">
+                              <span 
+                                className="inline-block w-3 h-3 rounded-full" 
+                                style={{ background: fleetColor }}
+                              />
+                              <span className="text-lg font-bold text-gray-900">
+                                {fleetOccupancy.toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="text-xs text-gray-600 space-y-1">
+                            <p><span className="font-semibold">Aviones en vuelo:</span> {activeFlights.length}</p>
+                            <p><span className="font-semibold">Carga actual:</span> {totalCurrent.toFixed(0)} kg</p>
+                            <p><span className="font-semibold">Capacidad total:</span> {totalCapacity.toFixed(0)} kg</p>
+                            <p className="mt-2 pt-2 border-t border-gray-300">
+                              <span className="font-semibold">Estado:</span> {fleetStatus}
+                            </p>
+                          </div>
+                          
+                          {/* Barra de progreso visual */}
+                          <div className="mt-3">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="h-2 rounded-full transition-all duration-300"
+                                style={{ 
+                                  width: `${Math.min(fleetOccupancy, 100)}%`,
+                                  background: fleetColor
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {metrics && (
                     <>
