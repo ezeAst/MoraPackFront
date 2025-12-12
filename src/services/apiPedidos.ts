@@ -193,6 +193,7 @@ export async function getPedidosRecientes(limit = 3): Promise<PedidoReciente[]> 
   const data = await resp.json().catch(() => []);
   if (!resp.ok) throw new Error(data?.mensaje || "No se pudo cargar pedidos recientes");
   return data;
+}
 /**
  * Resetea el cache de IDs en el backend
  * Útil después de limpiar la tabla de pedidos
