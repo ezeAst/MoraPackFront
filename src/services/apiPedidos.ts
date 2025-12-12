@@ -151,6 +151,48 @@ export async function getPedidosPorAlmacen(codigoAlmacen: string): Promise<Pedid
   return res.json();
 }
 
+
+export type CreatePedidoPayload = {
+  client_id: string;          // tu ID numérico escrito
+  product_quantity: number;
+  destination_codigo: string; // ICAO destino (ej. SKBO)
+  created_at: string;         // fecha/hora ajustada (YYYY-MM-DDTHH:mm:ss)
+};
+
+export async function crearPedido(payload: {
+  id_cliente: string;
+  cantidad: number;
+  aeropuerto_destino: string;
+  created_at: string;
+}) {
+  const resp = await fetch(`${API_BASE}/pedidos/insertar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    throw new Error(data?.mensaje || "Error al registrar pedido");
+  }
+
+  return data; // { id, mensaje } o lo que devuelva tu backend
+}
+
+
+export type PedidoReciente = {
+  id: number;
+  aeropuerto_destino: string;
+  cantidad: number;
+  id_cliente: string;
+};
+
+export async function getPedidosRecientes(limit = 3): Promise<PedidoReciente[]> {
+  const resp = await fetch(`${API_BASE}/pedidos/recientes?limit=${limit}`);
+  const data = await resp.json().catch(() => []);
+  if (!resp.ok) throw new Error(data?.mensaje || "No se pudo cargar pedidos recientes");
+  return data;
 /**
  * Resetea el cache de IDs en el backend
  * Útil después de limpiar la tabla de pedidos
