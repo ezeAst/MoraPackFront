@@ -10,8 +10,78 @@ export type PedidoEvent = {
   type: 'new' | 'delivered' | 'in_transit' | 'delayed';
 };
 
-// ✅ NUEVA FUNCIÓN: Importar con batch processing
-export async function importarPedidosEnLotes(pedidos: PedidoDTO[], onProgress?: (progress: number) => void) {
+export type PedidoEnAlmacen = {
+  id: number;
+  aeropuertoDestino: string;
+  cantidad: number;
+  estado: string;
+  tramoActual: number;
+  fecha: string;
+};
+
+export interface ImportResponse {
+  insertados: number;
+  duplicados: number;
+  errores: number;
+  tiempoMs?: number;
+  pedidosPorSegundo?: number;
+}
+
+// ✅ NUEVA FUNCIÓN OPTIMIZADA: Importar TODO de una vez
+export async function importarPedidosCompleto(
+  pedidos: PedidoDTO[], 
+  onProgress?: (progress: number) => void
+): Promise<ImportResponse> {
+  console.log(`📦 Enviando ${pedidos.length} pedidos al backend (método optimizado)...`);
+  const startTime = Date.now();
+
+  try {
+    // Simular progreso inicial
+    if (onProgress) onProgress(10);
+
+    const res = await fetch(`${API_BASE}/pedidos/importarTxtCompleto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pedidos),
+      // Aumentar timeout para archivos grandes (5 minutos)
+      signal: AbortSignal.timeout(300000),
+    });
+
+    if (onProgress) onProgress(90);
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Error al importar pedidos: ${res.status} ${text}`);
+    }
+
+    const resultado = await res.json();
+    const endTime = Date.now();
+    const totalTime = endTime - startTime;
+
+    if (onProgress) onProgress(100);
+
+    console.log('✅ Importación completada:');
+    console.log(`   - Pedidos insertados: ${resultado.insertados}`);
+    console.log(`   - Tiempo total: ${totalTime}ms`);
+    if (resultado.pedidosPorSegundo) {
+      console.log(`   - Velocidad backend: ${resultado.pedidosPorSegundo} pedidos/seg`);
+    }
+
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error en importación:', error);
+    throw error;
+  }
+}
+
+// ⚠️ FUNCIÓN ANTIGUA (LENTA): Importar con batch processing de 100 en 100
+// DEPRECADA - Usa importarPedidosCompleto() en su lugar
+export async function importarPedidosEnLotes(
+  pedidos: PedidoDTO[], 
+  onProgress?: (progress: number) => void
+): Promise<ImportResponse> {
+  console.warn('⚠️ Usando método de lotes (LENTO). Considera usar importarPedidosCompleto()');
+  
   const BATCH_SIZE = 100; // Enviar de 100 en 100
   let totalInsertados = 0;
   let totalDuplicados = 0;
@@ -73,19 +143,26 @@ export async function getPedidosEvents(): Promise<PedidoEvent[]> {
   return res.json();
 }
 
-export type PedidoEnAlmacen = {
-  id: number;
-  aeropuertoDestino: string;
-  cantidad: number;
-  estado: string;
-  tramoActual: number;
-  fecha: string;
-};
-
 export async function getPedidosPorAlmacen(codigoAlmacen: string): Promise<PedidoEnAlmacen[]> {
   const res = await fetch(`${API_BASE}/pedidos/almacen/${codigoAlmacen}`);
   if (!res.ok) {
     throw new Error(`Error al obtener pedidos del almacén ${codigoAlmacen}`);
   }
   return res.json();
+}
+
+/**
+ * Resetea el cache de IDs en el backend
+ * Útil después de limpiar la tabla de pedidos
+ */
+export async function resetearCachePedidos(): Promise<void> {
+  const res = await fetch(`${API_BASE}/pedidos/resetCache`, {
+    method: 'POST',
+  });
+
+  if (!res.ok) {
+    throw new Error('Error al resetear cache de pedidos');
+  }
+
+  console.log('✅ Cache de pedidos reseteado');
 }
