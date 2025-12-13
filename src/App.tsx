@@ -31,9 +31,9 @@ function AppContent() {
   };
 
   return (
-    <div className="h-screen bg-gray-50 overflow-hidden flex flex-col">
+    <div className="h-screen bg-gray-50 flex flex-col">
       <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
