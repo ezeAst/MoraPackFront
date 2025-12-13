@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, ChangeEvent  } from 'react';
-import { Plane, Download, RefreshCcw, Package, X, Filter , Upload } from 'lucide-react';
-import { getVuelosActivos, getPedidosEnVuelo, type PedidoEnVuelo } from '../services/apiOperaciones';
+import { Plane, Download, RefreshCcw, Package, X, Upload } from 'lucide-react';
+import { getOperacionesStatus } from '../services/apiOperaciones';
 import { uploadVuelosFile } from '../services/apiVuelos';
 import { useSearchParams } from 'react-router-dom';
+import { cacheService } from '../services/cacheService';
 
 // Intervalo de polling (ms)
 const POLLING_INTERVAL = 5000;
@@ -18,10 +19,17 @@ interface VistaVuelo {
   statusLabel: string;
   progressPercentage: number;
   remainingSeconds: number;
-  // Datos adicionales para el endpoint de pedidos
   departureTime: string;
-  originCode?: string;
-  destCode?: string;
+  arrivalTime: string;
+  durationSeconds: number;
+  elapsedSeconds: number;
+  currentLat: number;
+  currentLng: number;
+  orderIds?: string[];
+  orders?: Array<{
+    id: string;
+    packages: number;
+  }>;
 }
 
 function formatRemaining(seconds: number): string {
@@ -46,10 +54,8 @@ export default function Vuelos() {
   // Estados para el modal de pedidos
   const [showPedidosModal, setShowPedidosModal] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState<VistaVuelo | null>(null);
-  const [pedidosEnVuelo, setPedidosEnVuelo] = useState<PedidoEnVuelo[]>([]);
-  const [loadingPedidos, setLoadingPedidos] = useState(false);
+  const [pedidosEnVuelo, setPedidosEnVuelo] = useState<Array<{ id: string; packages: number }>>([]);
   const [errorPedidos, setErrorPedidos] = useState<string | null>(null);
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -93,41 +99,48 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
 
 
 
-  // Cargar vuelos activos
+  // Cargar vuelos activos desde operaciones
   const fetchFlights = async (manual = false) => {
     if (manual) {
       // en refresco manual mostrar spinner rápido
       setLoading(true);
+      cacheService.invalidate('operaciones-status');
     }
     try {
       setError(null);
-      const data = await getVuelosActivos();
-      const mapped: VistaVuelo[] = data.map(v => {
-        // Extraer códigos de origen y destino del flightCode (formato: ORIGEN-DESTINO-timestamp)
-        const parts = v.flightCode.split('-');
-        const originCode = parts[0] || '';
-        const destCode = parts[1] || '';
-        
-        // El backend entrega route: [[lng,lat],[lng,lat]] pero no nombres; derivamos nombres simples lng,lat para ahora
-        const origenStr = originCode || (v.route && v.route[0] ? `${v.route[0][1].toFixed(2)},${v.route[0][0].toFixed(2)}` : 'Origen');
-        const destinoStr = destCode || (v.route && v.route[1] ? `${v.route[1][1].toFixed(2)},${v.route[1][0].toFixed(2)}` : 'Destino');
+      
+      // Usar caché con TTL de 30 segundos
+      const status = await cacheService.getOrFetch(
+        'operaciones-status',
+        () => getOperacionesStatus(),
+        30000
+      );
+      
+      const mapped: VistaVuelo[] = (status.vuelosActivos || []).map(v => {
+        const statusLabel = v.status === 'EN_VUELO' ? 'EN_VUELO' : v.status === 'LANDED' ? 'ATERRIZADO' : 'PROGRAMADO';
         
         return {
           id: v.id,
           flightCode: v.flightCode,
-          origin: origenStr,
-          destination: destinoStr,
+          origin: v.origin,
+          destination: v.destination,
           packages: v.packages,
           capacity: v.capacity,
           status: v.status,
-          statusLabel: v.status,
-          progressPercentage: Math.min(100, Math.max(0, v.progressPercentage)),
+          statusLabel,
+          progressPercentage: Math.round(Math.min(100, Math.max(0, v.progressPercentage)) * 10000) / 10000,
           remainingSeconds: Math.max(0, v.durationSeconds - v.elapsedSeconds),
           departureTime: v.departureTime,
-          originCode,
-          destCode
+          arrivalTime: v.arrivalTime,
+          durationSeconds: v.durationSeconds,
+          elapsedSeconds: v.elapsedSeconds,
+          currentLat: v.currentLat,
+          currentLng: v.currentLng,
+          orderIds: v.orderIds,
+          orders: v.orders
         };
       });
+      
       // Orden: activos primero por menor tiempo restante, luego el resto
       mapped.sort((a,b) => {
         const activeA = a.status === 'EN_VUELO';
@@ -136,6 +149,7 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
         if (!activeA && activeB) return 1;
         return a.remainingSeconds - b.remainingSeconds;
       });
+      
       setFlights(mapped);
     } catch (e:any) {
       setError(e.message || 'Error al cargar vuelos activos');
@@ -148,32 +162,16 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
   const handleVerPedidos = async (flight: VistaVuelo) => {
     setSelectedFlight(flight);
     setShowPedidosModal(true);
-    setLoadingPedidos(true);
     setErrorPedidos(null);
-    setPedidosEnVuelo([]);
-
-    try {
-      // Extraer fecha y hora del departureTime (formato ISO: 2024-01-15T10:30:00)
-      const depTime = new Date(flight.departureTime);
-      const fecha = depTime.toISOString().split('T')[0]; // YYYY-MM-DD
-      const hora = `${String(depTime.getHours()).padStart(2, '0')}:${String(depTime.getMinutes()).padStart(2, '0')}`; // HH:mm
-
-      if (!flight.originCode || !flight.destCode) {
-        throw new Error('No se pudo determinar origen/destino del vuelo');
-      }
-
-      const pedidos = await getPedidosEnVuelo(
-        flight.originCode,
-        flight.destCode,
-        fecha,
-        hora
-      );
-      setPedidosEnVuelo(pedidos);
-    } catch (err: any) {
-      setErrorPedidos(err.message || 'Error al cargar los pedidos del vuelo');
-      console.error('Error cargando pedidos del vuelo:', err);
-    } finally {
-      setLoadingPedidos(false);
+    
+    // Preferir usar orders si están disponibles, sino orderIds
+    if (flight.orders && flight.orders.length > 0) {
+      setPedidosEnVuelo(flight.orders);
+    } else if (flight.orderIds && flight.orderIds.length > 0) {
+      setPedidosEnVuelo(flight.orderIds.map(id => ({ id, packages: 0 })));
+    } else {
+      setPedidosEnVuelo([]);
+      setErrorPedidos('Este vuelo no tiene pedidos asignados');
     }
   };
 
@@ -247,7 +245,7 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
   const destinosUnicos = Array.from(new Set(flights.map(f => f.destination))).filter(Boolean);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="bg-[#FF6600] text-white px-8 py-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Monitoreo en tiempo real</h1>
@@ -273,15 +271,10 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
             onChange={handleFileChange}
             className="hidden"
           />
-          {uploadMessage && (
-            <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-1">
-              {uploadMessage}
-            </p>
-          )}
         </div>
       </div>
 
-      <div className="p-8">
+      <div className="flex-1 overflow-y-auto p-8">
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-6">
@@ -389,7 +382,7 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
                         <div className="flex-1 bg-gray-200 rounded-full h-2 w-32">
                           <div className={`h-full rounded-full ${getProgressColor(f.status)}`} style={{ width: `${f.progressPercentage}%` }} />
                         </div>
-                        <span className="text-sm text-gray-600">{f.progressPercentage}%</span>
+                        <span className="text-sm text-gray-600">{f.progressPercentage.toFixed(4)}%</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 font-medium text-gray-700">{formatRemaining(f.remainingSeconds)}</td>
@@ -449,15 +442,10 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-6">
-              {loadingPedidos ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="w-12 h-12 border-4 border-[#FF6600] border-t-transparent rounded-full animate-spin mb-4"></div>
-                  <p className="text-gray-600">Cargando pedidos...</p>
-                </div>
-              ) : errorPedidos ? (
+              {errorPedidos ? (
                 <div className="bg-red-50 border-l-4 border-red-500 p-4">
                   <p className="text-red-700">
-                    <span className="font-bold">Error:</span> {errorPedidos}
+                    <span className="font-bold">Info:</span> {errorPedidos}
                   </p>
                 </div>
               ) : pedidosEnVuelo.length === 0 ? (
@@ -467,50 +455,36 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <p className="text-sm text-gray-600">
-                      Total de pedidos: <span className="font-semibold text-gray-800">{pedidosEnVuelo.length}</span>
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Carga: <span className="font-semibold text-gray-800">{selectedFlight.packages}/{selectedFlight.capacity}</span>
-                    </p>
+                  <div className="mb-6 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">
+                        Total de pedidos: <span className="font-semibold text-gray-800">{pedidosEnVuelo.length}</span>
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Carga: <span className="font-semibold text-gray-800">{selectedFlight.packages}/{selectedFlight.capacity}</span>
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">
+                        Progreso: <span className="font-semibold text-gray-800">{selectedFlight.progressPercentage.toFixed(4)}%</span>
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Salida: <span className="font-semibold text-gray-800">{selectedFlight.departureTime}</span>
+                      </p>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50 border-b-2 border-gray-200">
+                      <thead className="bg-gray-100 border-b-2 border-gray-300">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID Pedido</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Cliente</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Destino</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Cantidad</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Estado</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tramo</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha</th>
+                          <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Código de Pedido</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {pedidosEnVuelo.map((pedido) => (
                           <tr key={pedido.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">#{pedido.id}</td>
-                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.idCliente}</td>
-                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.aeropuertoDestino}</td>
-                            <td className="px-4 py-3 text-sm text-gray-700">{pedido.cantidad}</td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {pedido.estado}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">Tramo {pedido.tramoActual}</td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
-                              {new Date(pedido.fecha).toLocaleDateString('es-ES', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </td>
+                            <td className="px-6 py-4 font-mono font-semibold text-gray-800">{pedido.id}</td>
                           </tr>
                         ))}
                       </tbody>
