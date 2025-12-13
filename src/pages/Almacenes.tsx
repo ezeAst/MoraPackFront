@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { Filter, RefreshCw, Package, X,Upload  } from 'lucide-react';
+import { Filter, RefreshCw, Package, X, Upload } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
-import type { Almacen } from '../types/operaciones';
+import type { Almacen, OperacionesStatus } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
 import { useSearchParams } from 'react-router-dom';
+import { cacheService } from '../services/cacheService';
 
 export default function Almacenes() {
   const [searchParams] = useSearchParams();
@@ -35,17 +36,36 @@ export default function Almacenes() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 👉 Aquí luego llamarás a tu API para subir el CSV/archivo
     console.log('Archivo de almacenes seleccionado:', file.name);
-    // e.target.value = ''; // opcional, para poder subir el mismo archivo otra vez
   };
 
-
-  const loadWarehouses = async () => {
+  // ✅ OPTIMIZADO: Usar caché para evitar recargar datos cuando se navega entre pestañas
+  const loadWarehouses = async (forceRefresh = false) => {
     try {
-      setLoading(true);
+      // Si se fuerza refresh, invalidar caché
+      if (forceRefresh) {
+        cacheService.invalidate('operaciones-status');
+      }
+      
+      // ✅ OPTIMIZADO: Mostrar datos en caché inmediatamente mientras carga
+      const staleData = cacheService.getStale<OperacionesStatus>('operaciones-status');
+      if (staleData && !forceRefresh) {
+        console.log('📦 Mostrando almacenes en caché mientras carga...');
+        setWarehouses(staleData.almacenes);
+        setLoading(false); // ✅ Quitar spinner inmediatamente
+      } else {
+        setLoading(true);
+      }
+      
       setError(null);
-      const response = await getOperacionesStatus();
+      
+      // Usar caché con TTL de 30 segundos
+      const response = await cacheService.getOrFetch(
+        'operaciones-status',
+        () => getOperacionesStatus(),
+        30000 // ✅ 30 segundos de caché
+      );
+      
       setWarehouses(response.almacenes);
     } catch (err: any) {
       setError(err.message || 'Error al cargar los almacenes');
@@ -104,21 +124,17 @@ export default function Almacenes() {
     normal: warehouses.filter(w => w.status === 'normal').length
   };
 
-  // Obtener lista única de códigos de aeropuerto
   const uniqueAirportCodes = Array.from(new Set(warehouses.map(w => w.codigo)));
 
-  // Filtrado de almacenes según los filtros seleccionados
   const filteredWarehouses = warehouses.filter((w) => {
-    const warehouseStatus = w.status; // Ahora el backend ya nos da el status calculado
+    const warehouseStatus = w.status;
     
-    // Filtro por estado
     const statusMatch =
       statusFilter === 'Todos' ||
       (statusFilter === 'Crítico' && warehouseStatus === 'critical') ||
       (statusFilter === 'Alerta' && warehouseStatus === 'warning') ||
       (statusFilter === 'Normal' && warehouseStatus === 'normal');
 
-    // Filtro por código de aeropuerto
     const airportCodeFilter = airportCodeFilterState === 'Todos' || w.codigo === airportCodeFilterState;
 
     return statusMatch && airportCodeFilter;
@@ -152,7 +168,6 @@ export default function Almacenes() {
             Cargar Almacenes
           </button>
 
-          {/* input oculto para seleccionar archivo */}
           <input
             ref={fileInputRef}
             type="file"
@@ -163,7 +178,6 @@ export default function Almacenes() {
         </div>
       </div>
 
-
       <div className="p-8">
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
@@ -172,7 +186,7 @@ export default function Almacenes() {
                 <span className="font-bold">Error:</span> {error}
               </p>
               <button 
-                onClick={loadWarehouses}
+                onClick={() => loadWarehouses(true)}
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -183,49 +197,47 @@ export default function Almacenes() {
         )}
 
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-4">
-              <Filter className="w-5 h-5 text-gray-600" />
-
-              <div className="flex flex-col">
-                <label className="text-xs text-gray-500 mb-1">Estado</label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-                >
-                  <option>Todos</option>
-                  <option>Crítico</option>
-                  <option>Alerta</option>
-                  <option>Normal</option>
-                </select>
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+            <div className="flex gap-4 items-center flex-wrap">
+              <div className="flex items-center gap-2">
+                <Filter className="w-5 h-5 text-gray-600" />
+                <span className="font-semibold text-gray-700">Filtros:</span>
               </div>
 
-              <div className="flex flex-col">
-                <label className="text-xs text-gray-500 mb-1">Código aeropuerto</label>
-                <select
-                  value={airportCodeFilterState}
-                  onChange={(e) => setAirportCodeFilterState(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-                >
-                  <option>Todos</option>
-                  {uniqueAirportCodes.map(code => (
-                    <option key={code} value={code}>{code}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button 
-                onClick={loadWarehouses}
-                className="mt-5 px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] flex items-center gap-2"
-                title="Recargar datos"
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
               >
-                <RefreshCw className="w-4 h-4" />
-                Actualizar
+                <option value="Todos">Todos los estados</option>
+                <option value="Crítico">Críticos</option>
+                <option value="Alerta">En alerta</option>
+                <option value="Normal">Normal</option>
+              </select>
+
+              <select
+                value={airportCodeFilterState}
+                onChange={(e) => setAirportCodeFilterState(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+              >
+                <option value="Todos">Todos los aeropuertos</option>
+                {uniqueAirportCodes.map(code => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => {
+                  setStatusFilter('Todos');
+                  setAirportCodeFilterState('Todos');
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+              >
+                Limpiar filtros
               </button>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex gap-3">
               <div className="px-4 py-2 bg-red-100 text-red-800 rounded-lg font-semibold">
                 {statusCounts.critical} Críticos
               </div>
@@ -246,8 +258,8 @@ export default function Almacenes() {
             </div>
           ) : (
             filteredWarehouses.map((warehouse) => {
-              const percentage = Math.round(warehouse.ocupacion); // El backend ya calcula la ocupación
-              const warehouseStatus = warehouse.status; // El backend ya nos da el status
+              const percentage = Math.round(warehouse.ocupacion);
+              const warehouseStatus = warehouse.status;
               const statusBadge = getStatusBadge(warehouseStatus);
 
               return (
@@ -310,7 +322,6 @@ export default function Almacenes() {
       {showPedidosModal && selectedWarehouse && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            {/* Header */}
             <div className="bg-[#FF6600] text-white px-6 py-4 flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold">Pedidos en almacén</h2>
@@ -326,7 +337,6 @@ export default function Almacenes() {
               </button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 overflow-y-auto p-6">
               {loadingPedidos ? (
                 <div className="flex flex-col items-center justify-center py-12">
@@ -394,7 +404,6 @@ export default function Almacenes() {
               )}
             </div>
 
-            {/* Footer */}
             <div className="bg-gray-50 px-6 py-4 border-t">
               <button
                 onClick={handleCloseModal}

@@ -1,15 +1,14 @@
 // src/types/operaciones.ts
 
-export type EstadoPedido = 'NO_ASIGNADO' | 'ASIGNADO' | 'EN_TRANSITO' | 'EN_ALMACEN_INTERMEDIO' | 'ENTREGADO' | 'RECOGIDO';
-
-export type AlmacenStatus = 'normal' | 'warning' | 'critical';
-
+/**
+ * Vuelo activo en operaciones día a día
+ */
 export interface VueloActivo {
   id: string;
   flightCode: string;
   route: [[number, number], [number, number]]; // [[lonOrigen, latOrigen], [lonDestino, latDestino]]
-  origin: string;
-  destination: string;
+  origin: string;  // Nombre del aeropuerto de origen
+  destination: string;  // Nombre del aeropuerto de destino
   currentLat: number;
   currentLng: number;
   departureTime: string;
@@ -17,24 +16,46 @@ export interface VueloActivo {
   durationSeconds: number;
   elapsedSeconds: number;
   packages: number;
-  pedidoCount: number;
   capacity: number;
   status: string;
   statusLabel: string;
   progressPercentage: number;
+  orderIds?: string[]; // ✅ IDs de pedidos en el vuelo (para mostrar en tooltip)
 }
 
+/**
+ * Vuelo saliente programado
+ */
+export interface OutgoingFlight {
+  id: string;
+  flightCode: string;
+  destination: string;
+  departureTime: string;
+  arrivalTime: string; // ✅ Agregado
+  packages: number;
+  capacity: number;
+  status: 'scheduled' | 'in_flight' | 'landed';
+  occupancyPercentage: number;
+}
+
+/**
+ * Almacén con información de ocupación
+ */
 export interface Almacen {
   codigo: string;
   nombre: string;
   capacidad: number;
   capacidadActual: number;
   ocupacion: number;
-  status: AlmacenStatus;
+  status: 'normal' | 'warning' | 'critical';
   lat: number;
   lon: number;
+  outgoingFlights?: OutgoingFlight[]; // ✅ Vuelos programados desde este almacén
 }
 
+/**
+ * Métricas del sistema
+ */
 export interface Metricas {
   pedidosNoAsignados: number;
   pedidosAsignados: number;
@@ -44,11 +65,14 @@ export interface Metricas {
   total: number;
 }
 
+/**
+ * Estado completo de las operaciones
+ */
 export interface OperacionesStatus {
   currentDateTime: string;
   usandoTiempoSimulado: boolean;
   activo: boolean;
-  inicioOperaciones: string;
+  inicioOperaciones: string | null;
   vuelosActivos: VueloActivo[];
   almacenes: Almacen[];
   eventosRecientes: string[];

@@ -2,8 +2,8 @@
 import type { OperacionesStatus } from '../types/operaciones';
 
 // Base URL del backend - usa variable de entorno o fallback a localhost
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-//const API_BASE_URL = "http://localhost:8080/api"
+//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = "http://localhost:8080/api"
 
 // ==================== TIPOS ADICIONALES ====================
 
@@ -54,6 +54,8 @@ export interface VueloActivo {
   id: string;
   flightCode: string;
   route: [[number, number], [number, number]]; // [[lonOrigen, latOrigen], [lonDestino, latDestino]]
+  origin: string;  // ✅ Nombre del aeropuerto de origen
+  destination: string;  // ✅ Nombre del aeropuerto de destino
   currentLat: number;
   currentLng: number;
   departureTime: string;
@@ -65,6 +67,7 @@ export interface VueloActivo {
   status: string;
   statusLabel: string;
   progressPercentage: number;
+  orderIds?: string[]; // ✅ IDs de pedidos en el vuelo
 }
 
 export interface PedidoEnVuelo {
@@ -240,6 +243,27 @@ export async function getPedidosEnVuelo(
   
   if (!response.ok) {
     throw new Error(`Error al obtener pedidos del vuelo: ${response.status} ${response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+/**
+ * ✅ NUEVO: Obtiene solo la lista de almacenes (optimizado)
+ * Mucho más rápido que getOperacionesStatus() porque no carga vuelos, eventos, etc.
+ * 
+ * @returns Lista de almacenes
+ * @throws Error si la petición falla
+ */
+export async function getAlmacenesOnly(): Promise<Aeropuerto[]> {
+  const response = await fetch(`${API_BASE_URL}/aeropuertos`, {
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Error al obtener almacenes: ${response.status} ${response.statusText}`);
   }
   
   return response.json();
