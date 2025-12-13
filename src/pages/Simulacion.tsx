@@ -947,7 +947,6 @@ const getPlaneAngle = (flight: api.Flight): number => {
                         <p className="text-gray-700"><span className="font-semibold">Vuelos completados:</span> {metrics.flightsCompleted}</p>
                         <p className="text-gray-700"><span className="font-semibold">Paquetes entregados:</span> {metrics.packagesDelivered}</p>
                         <p className="text-gray-700"><span className="font-semibold">Paquetes pendientes:</span> {metrics.packagesPending}</p>
-                        <p className="text-gray-700"><span className="font-semibold">Tasa de éxito:</span> {metrics.successRate.toFixed(1)}%</p>
                       </div>
                     </>
                   )}
