@@ -1,6 +1,6 @@
 // Base URL del backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-//const API_BASE_URL = "http://localhost:8080/api"
+//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = "http://localhost:8080/api"
 // ==================== TIPOS ====================
 
 export type SimulationType = 'weekly' | 'stress_test';
