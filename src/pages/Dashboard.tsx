@@ -713,20 +713,31 @@ export default function Dashboard() {
       )}
 
       {/* Header */}
-      <div className="bg-[#FF6600] text-white px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Panel de Operaciones Globales</h1>
-          {operacionesData?.usandoTiempoSimulado && tiempoActual && (
-            <p className="text-xl font-bold mt-1">
+      <div className="bg-[#FF6600] text-white px-6 py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <h1 className="text-xl font-bold">Panel de Operaciones Globales</h1>
+
+        {(operacionesData?.usandoTiempoSimulado && tiempoActual) ? (
+          <div className="flex items-center gap-4 flex-wrap mt-0.5">
+            <p className="text-sm font-bold m-0">
               ⏰ {tiempoActual}
             </p>
-          )}
+
+            <p className="text-sm m-0 font-bold">
+              {operacionesData?.activo
+                ? `🟢 Activo desde ${operacionesData.inicioOperaciones}`
+                : '⚪ Esperando inicio de operaciones...'}
+            </p>
+          </div>
+        ) : (
           <p className="text-sm mt-0.5 opacity-75">
-            {operacionesData?.activo 
-              ? `🟢 Activo desde ${operacionesData.inicioOperaciones}` 
+            {operacionesData?.activo
+              ? `🟢 Activo desde ${operacionesData.inicioOperaciones}`
               : '⚪ Esperando inicio de operaciones...'}
           </p>
-        </div>
+        )}
+      </div>
+
         <div className="flex gap-3 mt-4 lg:mt-0 flex-wrap">
           {/* Botón Iniciar/Detener Operaciones */}
           {!operacionesData?.activo ? (
