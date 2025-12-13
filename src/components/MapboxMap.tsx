@@ -44,6 +44,8 @@ type Route = {
   id: string;
   coordinates: [number, number][];
   color: string;
+  // 0 to 1 representing how much of the route has been completed
+  progress?: number;
 };
 
 type Props = {
@@ -136,6 +138,54 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
     }
   };
 
+  // Compute remaining segment of a LineString based on progress (0..1)
+  const trimLineByProgress = (coords: [number, number][], progress?: number): [number, number][] => {
+    if (!coords || coords.length < 2) return coords;
+    const p = Math.max(0, Math.min(1, progress ?? 0));
+    if (p <= 0) return coords; // no trimming
+    if (p >= 1) return [coords[coords.length - 1]]; // fully completed
+
+    // Haversine distance in meters
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const dist = (a: [number, number], b: [number, number]) => {
+      const R = 6371000;
+      const dLat = toRad(b[1] - a[1]);
+      const dLon = toRad(b[0] - a[0]);
+      const lat1 = toRad(a[1]);
+      const lat2 = toRad(b[1]);
+      const s = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+
+    // Total length
+    const segLengths: number[] = [];
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const d = dist(coords[i], coords[i + 1]);
+      segLengths.push(d);
+      total += d;
+    }
+
+    const target = total * p;
+    let acc = 0;
+    for (let i = 0; i < segLengths.length; i++) {
+      const segLen = segLengths[i];
+      if (acc + segLen >= target) {
+        const remainingInSeg = target - acc;
+        const t = segLen === 0 ? 1 : remainingInSeg / segLen; // 0..1 along segment
+        const [x1, y1] = coords[i];
+        const [x2, y2] = coords[i + 1];
+        const xi = x1 + (x2 - x1) * t;
+        const yi = y1 + (y2 - y1) * t;
+        // Return trimmed line starting at interpolated point to the end
+        return [[xi, yi], ...coords.slice(i + 1)];
+      }
+      acc += segLen;
+    }
+    // If not found (edge case), return last point
+    return [coords[coords.length - 1]];
+  };
+
   // Lista de ciudades que deben mostrar el icono de almacén
   const warehouseIconCities = ['Baku', 'Bruselas', 'Lima'];
 
@@ -156,23 +206,26 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
         projection={{ name: 'mercator' }}  
         >
       {/* Rutas */}
-      {routes.map((route) => (
-        <Source
-          key={route.id}
-          id={route.id}
-          type="geojson"
-          data={{
-            type: 'Feature',
-            properties: { color: route.color },
-            geometry: {
-              type: 'LineString',
-              coordinates: route.coordinates
-            }
-          }}
-        >
-          <Layer {...routeLayer} id={`${route.id}-layer`} />
-        </Source>
-      ))}
+      {routes.map((route) => {
+        const trimmed = trimLineByProgress(route.coordinates, route.progress);
+        return (
+          <Source
+            key={route.id}
+            id={route.id}
+            type="geojson"
+            data={{
+              type: 'Feature',
+              properties: { color: route.color },
+              geometry: {
+                type: 'LineString',
+                coordinates: trimmed
+              }
+            }}
+          >
+            <Layer {...routeLayer} id={`${route.id}-layer`} />
+          </Source>
+        );
+      })}
 
       {/* Almacenes */}
       {warehouses.map((warehouse, i) => {

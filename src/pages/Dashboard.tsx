@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Bell, Info, Play, Square, Calendar } from 'lucide-react';
+import { BarChart3, Bell, Globe, Play, Square, Calendar } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
 import { getOperacionesStatus, startOperaciones, stopOperaciones, type Aeropuerto } from '../services/apiOperaciones';
@@ -22,6 +22,7 @@ type Route = {
   id: string;
   coordinates: [number, number][];
   color: string;
+  progress?: number; // 0..1
 };
 
 export default function Dashboard() {
@@ -49,6 +50,9 @@ export default function Dashboard() {
     warehouses: true,
     planes: true,
     routes: true,
+    planesGreen: true,
+    planesYellow: true,
+    planesRed: true,
   });
 
   // Estado para el reloj en tiempo real
@@ -255,6 +259,27 @@ export default function Dashboard() {
   };
 
   // ==================== PREPARACIÓN DE DATOS PARA EL MAPA ====================
+  // Helpers de ocupación de aviones (misma lógica que Simulación Semanal)
+  const getPlaneCapacityInfo = (v: any) => {
+    const capacity = v.capacity ?? v.maxCapacity ?? 0;
+    const current = v.packages ?? v.current ?? v.load ?? 0;
+    return { current: Number(current) || 0, capacity: Number(capacity) || 0 };
+  };
+
+  const getCapacityColor = (pct: number) => {
+    if (pct < 70) return '#22c55e'; // verde
+    if (pct <= 90) return '#eab308'; // amarillo
+    return '#ef4444'; // rojo
+  };
+
+  const getPlaneColorAndPct = (v: any) => {
+    const { current, capacity } = getPlaneCapacityInfo(v);
+    if (capacity > 0) {
+      const pct = (current / capacity) * 100;
+      return { color: getCapacityColor(pct), pct, current, capacity };
+    }
+    return { color: '#3b82f6', pct: undefined as number | undefined, current: undefined as number | undefined, capacity: undefined as number | undefined };
+  };
   
   /**
    * Determina el color de la ruta según la ciudad de origen
@@ -309,6 +334,7 @@ export default function Dashboard() {
         id: v.id,
         coordinates: v.route,
         color: color,
+        progress: (typeof v.progressPercentage === 'number') ? Math.max(0, Math.min(1, v.progressPercentage / 100)) : undefined,
       };
     }) || [];
 
@@ -325,6 +351,19 @@ export default function Dashboard() {
     { label: 'Entregas pendientes', value: operacionesData.metricas.pedidosAsignados.toString() },
     { label: 'Pedidos entregados', value: operacionesData.metricas.pedidosEntregados.toString() },
   ] : [];
+
+  // Estado de la flota (ocupación total) similar a Simulación Semanal
+  const fleet = (() => {
+    const active = operacionesData?.vuelosActivos?.filter(v => v.status === 'EN_VUELO') || [];
+    const totalCapacity = active.reduce((sum, v) => sum + (Number(v.capacity) || 0), 0);
+    const totalCurrent = active.reduce((sum, v) => sum + (Number(v.packages) || 0), 0);
+    const occupancy = totalCapacity > 0 ? (totalCurrent / totalCapacity) * 100 : 0;
+    let color = '#22c55e';
+    let statusText = '< 70% capacidad';
+    if (occupancy >= 90) { color = '#ef4444'; statusText = '> 90% capacidad'; }
+    else if (occupancy >= 70) { color = '#eab308'; statusText = '70–90% capacidad'; }
+    return { activeCount: active.length, totalCapacity, totalCurrent, occupancy, color, statusText };
+  })();
 
   // Eventos recientes (últimos 5)
   const alerts = operacionesData?.eventosRecientes.slice(0, 5).map(evento => {
@@ -488,6 +527,13 @@ export default function Dashboard() {
           >
             {showAlerts ? 'Ocultar alertas' : 'Mostrar alertas'}
           </button>
+          {/* Toggle Leyenda en header para hacerlo más visible */}
+          <button
+            onClick={() => setShowLegend(s => !s)}
+            className="bg-white text-[#FF6600] px-4 py-2 rounded-lg font-medium shadow hover:bg-gray-100"
+          >
+            {showLegend ? 'Ocultar leyenda' : 'Mostrar leyenda'}
+          </button>
         </div>
       </div>
 
@@ -523,6 +569,16 @@ export default function Dashboard() {
               {legend.planes && operacionesData?.vuelosActivos
                 .filter(v => v.status === 'EN_VUELO')
                 .map(vuelo => {
+                  const pc = getPlaneColorAndPct(vuelo);
+                  const color = pc.color;
+                  // Filtrado por categoría de ocupación
+                  let passesFilter = true;
+                  if (typeof pc.pct === 'number') {
+                    if (pc.pct < 70) passesFilter = legend.planesGreen;
+                    else if (pc.pct <= 90) passesFilter = legend.planesYellow;
+                    else passesFilter = legend.planesRed;
+                  }
+                  if (!passesFilter) return null;
                   // Calcular rotación usando posición actual y destino
                   const [originCoords, destCoords] = vuelo.route;
                   const rotation = calculateRotation(
@@ -551,7 +607,7 @@ export default function Dashboard() {
                         >
                           <path 
                             d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" 
-                            fill="#3b82f6"
+                            fill={color}
                             transform={`rotate(${rotation} 12 12)`}
                           />
                         </svg>
@@ -561,7 +617,7 @@ export default function Dashboard() {
                           <div className="font-semibold">{vuelo.flightCode}</div>
                           <div>{vuelo.origin} → {vuelo.destination}</div>
                           <div>Progreso: {Math.round(vuelo.progressPercentage)}%</div>
-                          <div>Paquetes: {vuelo.packages}/{vuelo.capacity}</div>
+                          <div>Paquetes: {vuelo.packages}/{vuelo.capacity}{typeof pc.pct === 'number' ? ` (${pc.pct.toFixed(0)}%)` : ''}</div>
                         </div>
                       </div>
                     </Marker>
@@ -571,18 +627,19 @@ export default function Dashboard() {
 
             {/* Botón de Leyenda (inferior izquierda) */}
             <div className="absolute left-3 bottom-3 z-30">
-              <button
-                onClick={() => setShowLegend(s => !s)}
-                className="flex items-center justify-center rounded-full w-10 h-10 bg-white/90 shadow border hover:bg-white"
-                aria-label="Alternar leyenda"
-                title="Leyenda"
-              >
-                <Info size={18} />
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowLegend(s => !s)}
+                  className="flex items-center justify-center rounded-full w-10 h-10 bg-white/90 shadow border hover:bg-white"
+                  aria-label="Alternar leyenda"
+                  title="Leyenda"
+                >
+                  <Globe size={18} />
+                </button>
 
-              {/* Panel de Leyenda */}
-              {showLegend && (
-                <div className="mt-2 p-3 rounded-xl bg-white/95 shadow border min-w-[260px]">
+                {/* Panel de Leyenda (aparece por encima del botón) */}
+                {showLegend && (
+                  <div className="absolute bottom-12 left-0 p-3 rounded-xl bg-white/95 shadow border min-w-[260px] max-h-[70vh] overflow-y-auto">
                   {/* Capacidad de almacenes */}
                   <div className="text-xs font-semibold mb-2">Capacidad de almacenes</div>
                   <ul className="text-sm space-y-1 mb-3">
@@ -600,14 +657,26 @@ export default function Dashboard() {
                     </li>
                   </ul>
 
-                  {/* Estado de vuelos */}
-                  <div className="text-xs font-semibold mb-2">Estado de vuelos</div>
+                  {/* Estado de vuelos por ocupación */}
+                  <div className="text-xs font-semibold mb-2">Aviones por ocupación</div>
                   <ul className="text-sm space-y-1 mb-3">
                     <li className="flex items-center gap-2">
                       <svg width="16" height="16" viewBox="0 0 24 24">
-                        <path d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" fill="#3b82f6"/>
+                        <path d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" fill="#22c55e"/>
                       </svg>
-                      <span>Avión en vuelo</span>
+                      <span>Verde: {'< 70% ocupación'}</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <svg width="16" height="16" viewBox="0 0 24 24">
+                        <path d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" fill="#eab308"/>
+                      </svg>
+                      <span>Amarillo: {'70–90% ocupación'}</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <svg width="16" height="16" viewBox="0 0 24 24">
+                        <path d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" fill="#ef4444"/>
+                      </svg>
+                      <span>Rojo: {'> 90% ocupación'}</span>
                     </li>
                   </ul>
 
@@ -659,8 +728,9 @@ export default function Dashboard() {
                       <span>Rutas</span>
                     </label>
                   </div>
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Overlays derecha: Estadísticas y Alertas */}
@@ -680,6 +750,23 @@ export default function Dashboard() {
                           <span className="text-2xl font-bold text-[#003366]">{s.value}</span>
                         </div>
                       ))}
+                      {/* Estado de la flota */}
+                      <div className="pt-3 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-gray-700 font-semibold text-sm">Ocupación total de la flota</span>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block w-3 h-3 rounded-full" style={{ background: fleet.color }} />
+                            <span className="text-lg font-bold text-gray-900">{fleet.occupancy.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="h-2 rounded-full transition-all"
+                            style={{ width: `${Math.min(fleet.occupancy, 100)}%`, background: fleet.color }}
+                          />
+                        </div>
+                        {/* Resumen detallado retirado para evitar duplicidad de información */}
+                      </div>
                     </div>
                   </div>
                 )}
