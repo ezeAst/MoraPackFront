@@ -5,8 +5,30 @@ import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
 import { getOperacionesStatus, startOperaciones, stopOperaciones, getPedidos, getPedidosEnVuelo, type Aeropuerto, type Pedido, type PedidoEnVuelo } from '../services/apiOperaciones';
 import type { OperacionesStatus } from '../types/operaciones';
+import { cacheService } from '../services/cacheService';
 
 type Status = 'normal' | 'warning' | 'critical';
+
+type OutgoingFlight = {
+  id: string;
+  flightCode: string;
+  destination: string;
+  departureTime: string;
+  arrivalTime: string;
+  packages: number;
+  capacity: number;
+  status: 'scheduled' | 'in_flight' | 'landed';
+  occupancyPercentage: number;
+};
+
+type OutgoingOrder = {
+  orderId: string;
+  destination: string;
+  flightCode: string;
+  departureTime: string;
+  weight: number;
+  registeredTime: string;
+};
 
 type Warehouse = {
   name: string;
@@ -16,6 +38,9 @@ type Warehouse = {
   status: Status;
   capacity?: number;
   current?: number;
+  occupancyPercentage?: number;
+  outgoingFlights?: OutgoingFlight[];
+  outgoingOrders?: OutgoingOrder[]; // ✅ NUEVO: Pedidos próximos
 };
 
 type Route = {
@@ -76,9 +101,23 @@ export default function Dashboard() {
 
   const loadInitialData = async () => {
     try {
-      setLoading(true);
-      // Cargar estado inicial
-      const status = await getOperacionesStatus();
+      // ✅ OPTIMIZADO: Mostrar datos en caché inmediatamente (si existen) mientras carga nuevos
+      const staleData = cacheService.getStale<OperacionesStatus>('operaciones-status');
+      if (staleData) {
+        console.log('📦 Mostrando datos en caché mientras carga...');
+        setOperacionesData(staleData);
+        setLoading(false); // ✅ Quitar spinner inmediatamente
+      } else {
+        setLoading(true);
+      }
+      
+      // Cargar datos frescos (puede usar caché válido o hacer request)
+      const status = await cacheService.getOrFetch(
+        'operaciones-status',
+        () => getOperacionesStatus(),
+        30000 // ✅ 30 segundos de caché
+      );
+      
       setOperacionesData(status);
       try {
         const pedidosResp = await getPedidos();
@@ -108,7 +147,13 @@ export default function Dashboard() {
 
     const interval = setInterval(async () => {
       try {
+        // ✅ OPTIMIZADO: El polling siempre actualiza el caché
+        // Esto hace que otros componentes también se beneficien de los datos frescos
         const status = await getOperacionesStatus();
+        
+        // Actualizar el caché con los nuevos datos
+        cacheService.set('operaciones-status', status);
+        
         setOperacionesData(status);
         setError(null);
       } catch (err: any) {
@@ -187,6 +232,9 @@ export default function Dashboard() {
       
       setShowStartModal(false);
       
+      // ✅ OPTIMIZADO: Invalidar caché antes de recargar para obtener datos frescos
+      cacheService.invalidate('operaciones-status');
+      
       // Actualizar el estado inmediatamente
       await loadInitialData();
       
@@ -205,6 +253,9 @@ export default function Dashboard() {
       setDeteniendo(true);
       
       await stopOperaciones();
+      
+      // ✅ OPTIMIZADO: Invalidar caché para obtener datos frescos
+      cacheService.invalidate('operaciones-status');
       
       // Actualizar el estado
       await loadInitialData();
@@ -433,14 +484,9 @@ export default function Dashboard() {
     status: a.status as Status,
     capacity: a.capacidad,
     current: a.capacidadActual,
-    outgoingOrders: (pedidosPorDestino[a.codigo] || []).slice(0, 3).map(p => ({
-      orderId: `${p.id}`,
-      destination: p.destino,
-      flightCode: p.tramoActual || 'Pendiente',
-      departureTime: '',
-      weight: p.cantidad,
-      registeredTime: '',
-    })),
+    occupancyPercentage: a.ocupacion,
+    outgoingFlights: a.outgoingFlights, // ✅ Próximos vuelos desde este almacén
+    outgoingOrders: a.outgoingOrders, // ✅ NUEVO: Próximos pedidos a salir
   })) || [];
 
   // Rutas: crear líneas entre origen y destino de cada vuelo
@@ -743,25 +789,27 @@ export default function Dashboard() {
                         </svg>
 
                         {/* Tooltip */}
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                          <div className="font-semibold">{vuelo.flightCode}</div>
-                          <div>{vuelo.origin} → {vuelo.destination}</div>
-                          <div>Progreso: {Math.round(vuelo.progressPercentage)}%</div>
-                          <div>Paquetes: {vuelo.packages}/{vuelo.capacity}{typeof pc.pct === 'number' ? ` (${pc.pct.toFixed(0)}%)` : ''}</div>
-                          {pedidosPorVuelo[vuelo.id]?.length ? (
-                            <div className="mt-2 pt-2 border-t border-gray-700 text-left">
-                              <div className="font-semibold mb-1">Pedidos en vuelo ({Math.min(pedidosPorVuelo[vuelo.id].length, 5)}{pedidosPorVuelo[vuelo.id].length > 5 ? '+' : ''})</div>
-                              {pedidosPorVuelo[vuelo.id].slice(0, 5).map((p, idx) => (
-                                <div key={idx} className="text-[11px] text-gray-200 flex justify-between gap-2">
-                                  <span className="font-mono">{p.id}</span>
-                                  <span className="truncate">→ {p.aeropuertoDestino}</span>
-                                  <span className="text-gray-300">{p.cantidad} kg</span>
-                                </div>
-                              ))}
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 min-w-[200px] max-w-[280px]">
+                          <div className="font-semibold text-center mb-1">{vuelo.flightCode}</div>
+                          <div className="text-center text-[10px] text-gray-300">{vuelo.origin} → {vuelo.destination}</div>
+                          <div className="text-center mt-1 border-t border-gray-600 pt-1">Progreso: {Math.round(vuelo.progressPercentage)}%</div>
+                          <div className="text-center text-[10px]">Paquetes: {vuelo.packages}/{vuelo.capacity}{typeof pc.pct === 'number' ? ` (${pc.pct.toFixed(0)}%)` : ''}</div>
+                          
+                          {/* Lista de pedidos en el vuelo - máximo 5 sin scroll */}
+                          {vuelo.orderIds && vuelo.orderIds.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-600">
+                              <div className="text-[10px] text-gray-400 mb-1 text-center">
+                                Pedidos ({Math.min(vuelo.orderIds.length, 5)}{vuelo.orderIds.length > 5 ? '+' : ''})
+                              </div>
+                              <div className="space-y-0.5 text-[10px]">
+                                {vuelo.orderIds.slice(0, 5).map((orderId: string, idx: number) => (
+                                  <div key={idx} className="text-gray-300 font-mono text-center">
+                                    • {orderId}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ) : pedidosVueloCargando.has(vuelo.id) ? (
-                            <div className="mt-2 text-[11px] text-gray-300">Cargando pedidos...</div>
-                          ) : null}
+                          )}
                         </div>
                       </div>
                     </Marker>
