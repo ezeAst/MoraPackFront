@@ -63,10 +63,6 @@ export default function Dashboard() {
 
   // Estados de datos
   const [operacionesData, setOperacionesData] = useState<OperacionesStatus | null>(null);
-  const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [pedidosPorDestino, setPedidosPorDestino] = useState<Record<string, Pedido[]>>({});
-  const [pedidosPorVuelo, setPedidosPorVuelo] = useState<Record<string, PedidoEnVuelo[]>>({});
-  const [pedidosVueloCargando, setPedidosVueloCargando] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,18 +110,6 @@ export default function Dashboard() {
       );
       
       setOperacionesData(status);
-      try {
-        const pedidosResp = await getPedidos();
-        setPedidos(pedidosResp);
-        const grouped: Record<string, Pedido[]> = {};
-        pedidosResp.forEach(p => {
-          if (!grouped[p.destino]) grouped[p.destino] = [];
-          grouped[p.destino].push(p);
-        });
-        setPedidosPorDestino(grouped);
-      } catch (err) {
-        console.warn('No se pudieron cargar pedidos iniciales:', err);
-      }
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Error al conectar con el servidor');
@@ -387,98 +371,6 @@ export default function Dashboard() {
     if (angle <= -180) angle += 360;
     
     return angle;
-  };
-
-  // ==================== BÚSQUEDA (similar a Simulación Semanal) ====================
-  const closeSearchModal = () => {
-    setShowSearchModal(false);
-    setSearchQuery('');
-    setSearchResult(null);
-    setSearchError(null);
-    setHasSearched(false);
-  };
-
-  const ensurePedidos = async () => {
-    if (pedidos.length > 0) return pedidos;
-    try {
-      const res = await getPedidos();
-      setPedidos(res);
-      const grouped: Record<string, Pedido[]> = {};
-      res.forEach(p => {
-        if (!grouped[p.destino]) grouped[p.destino] = [];
-        grouped[p.destino].push(p);
-      });
-      setPedidosPorDestino(grouped);
-      return res;
-    } catch (err: any) {
-      setSearchError(err.message || 'No se pudieron cargar pedidos');
-      return [];
-    }
-  };
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      setSearchError('Por favor ingrese un código o ID para buscar');
-      setSearchResult(null);
-      setHasSearched(true);
-      return;
-    }
-
-    setSearchError(null);
-    setSearchResult(null);
-    setHasSearched(true);
-    const query = searchQuery.trim().toUpperCase();
-
-    if (searchType === 'order') {
-      const allPedidos = await ensurePedidos();
-      // Map orderStatus to estados del backend
-      const matchesStatus = (p: Pedido) => {
-        if (orderStatus === 'all') return true;
-        if (orderStatus === 'pending') return p.estado === 'NO_ASIGNADO' || p.estado === 'ASIGNADO';
-        if (orderStatus === 'in_transit') return p.estado === 'EN_TRANSITO' || p.estado === 'EN_ALMACEN_INTERMEDIO';
-        if (orderStatus === 'delivered') return p.estado === 'ENTREGADO';
-        return true;
-      };
-      const found = allPedidos.find(p => `${p.id}`.toUpperCase().includes(query) && matchesStatus(p));
-      if (found) {
-        setSearchResult({ type: 'order', data: found });
-      } else {
-        setSearchError(`No se encontró ningún pedido con ID que contenga "${searchQuery}"`);
-      }
-    } else {
-      const flights = operacionesData?.vuelosActivos || [];
-      const found = flights.find(f => f.id.toUpperCase().includes(query) || f.flightCode.toUpperCase().includes(query));
-      if (found) {
-        setSearchResult({ type: 'flight', data: found });
-      } else {
-        setSearchError(`No se encontró ninguna unidad de transporte con ID/código que contenga "${searchQuery}"`);
-      }
-    }
-  };
-
-  // ==================== PEDIDOS POR VUELO (tooltip de avión) ====================
-  const fetchPedidosVuelo = async (vuelo: any) => {
-    if (!vuelo || !vuelo.id || pedidosPorVuelo[vuelo.id]) return;
-    if (pedidosVueloCargando.has(vuelo.id)) return;
-    setPedidosVueloCargando(prev => new Set(prev).add(vuelo.id));
-    try {
-      const dt = new Date(vuelo.departureTime || vuelo.arrivalTime || Date.now());
-      const fecha = isNaN(dt.getTime()) ? '' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-      const hora = isNaN(dt.getTime()) ? '' : `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
-      if (!vuelo.origin || !vuelo.destination || !fecha || !hora) {
-        return;
-      }
-      const pedidosVuelo = await getPedidosEnVuelo(vuelo.origin, vuelo.destination, fecha, hora);
-      setPedidosPorVuelo(prev => ({ ...prev, [vuelo.id]: pedidosVuelo }));
-    } catch (err) {
-      console.warn('No se pudieron cargar pedidos del vuelo', vuelo.id, err);
-    } finally {
-      setPedidosVueloCargando(prev => {
-        const next = new Set(prev);
-        next.delete(vuelo.id);
-        return next;
-      });
-    }
   };
 
   // ==================== PREPARACIÓN DE DATOS PARA EL MAPA ====================
@@ -948,7 +840,6 @@ export default function Dashboard() {
                       <div 
                         className="relative group cursor-pointer"
                         onClick={() => handlePlaneClick(vuelo.flightCode)}
-                        onMouseEnter={() => fetchPedidosVuelo(vuelo)}
                       >
                         {/* SVG del avión con rotación */}
                         <svg 
@@ -1160,153 +1051,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {/* Modal de búsqueda */}
-      {showSearchModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-gray-900">Búsqueda en Operaciones</h3>
-              <button onClick={closeSearchModal} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {/* Tipo */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">¿Qué desea buscar?</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="searchType"
-                      value="order"
-                      checked={searchType === 'order'}
-                      onChange={(e) => setSearchType(e.target.value as 'order' | 'flight')}
-                      className="w-4 h-4 text-[#FF6600]"
-                    />
-                    <span className="text-sm text-gray-700">Pedido / Envío</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="searchType"
-                      value="flight"
-                      checked={searchType === 'flight'}
-                      onChange={(e) => setSearchType(e.target.value as 'order' | 'flight')}
-                      className="w-4 h-4 text-[#FF6600]"
-                    />
-                    <span className="text-sm text-gray-700">Vuelo / Unidad</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Estado pedido */}
-              {searchType === 'order' && (
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Estado del pedido</label>
-                  <select
-                    value={orderStatus}
-                    onChange={(e) => setOrderStatus(e.target.value as typeof orderStatus)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
-                  >
-                    <option value="all">Todos</option>
-                    <option value="pending">Planificado / asignado</option>
-                    <option value="in_transit">En tránsito / almacén intermedio</option>
-                    <option value="delivered">Entregado</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Campo */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Código / ID</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                    placeholder={searchType === 'order' ? 'Ej: 1234' : 'Ej: FLT-001'}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
-                    autoFocus
-                  />
-                  <button
-                    onClick={handleSearch}
-                    disabled={!searchQuery.trim()}
-                    className="px-6 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
-                  >
-                    <Search className="w-4 h-4" /> Buscar
-                  </button>
-                </div>
-              </div>
-
-              {/* Resultados */}
-              {hasSearched && (
-                <div className="mt-4 p-4 border rounded-lg">
-                  {searchError && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                      <p className="font-semibold">No se encontraron resultados</p>
-                      <p className="text-sm mt-1">{searchError}</p>
-                    </div>
-                  )}
-
-                  {searchResult && !searchError && (
-                    <div className="space-y-4">
-                      {searchResult.type === 'order' ? (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <h4 className="text-lg font-bold text-blue-900 mb-3">📦 Detalles del pedido</h4>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <p className="font-semibold text-gray-700">ID:</p>
-                              <p className="text-gray-900 font-mono">{(searchResult.data as Pedido).id}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-700">Estado:</p>
-                              <p className="text-gray-900">{(searchResult.data as Pedido).estado}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-700">Destino:</p>
-                              <p className="text-gray-900">{(searchResult.data as Pedido).destino}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-700">Cantidad:</p>
-                              <p className="text-gray-900">{(searchResult.data as Pedido).cantidad} kg</p>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                          <h4 className="text-lg font-bold text-amber-900 mb-3">✈️ Detalles del vuelo</h4>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <p className="font-semibold text-gray-700">Código:</p>
-                              <p className="text-gray-900 font-mono">{searchResult.data.flightCode}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-700">Ruta:</p>
-                              <p className="text-gray-900">{searchResult.data.origin} → {searchResult.data.destination}</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-700">Progreso:</p>
-                              <p className="text-gray-900">{Math.round(searchResult.data.progressPercentage)}%</p>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-gray-700">Carga:</p>
-                              <p className="text-gray-900">{searchResult.data.packages}/{searchResult.data.capacity} kg</p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
