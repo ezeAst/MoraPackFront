@@ -3,11 +3,9 @@ import { Filter, RefreshCw, Package, X, Upload } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import type { Almacen, OperacionesStatus } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
-import { useSearchParams } from 'react-router-dom';
 import { cacheService } from '../services/cacheService';
 
 export default function Almacenes() {
-  const [searchParams] = useSearchParams();
   
   const [warehouses, setWarehouses] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +150,7 @@ export default function Almacenes() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="bg-[#FF6600] text-white px-8 py-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Panel de almacenes</h1>
@@ -178,7 +176,7 @@ export default function Almacenes() {
         </div>
       </div>
 
-      <div className="p-8">
+      <div className="flex-1 overflow-y-auto p-8">
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
             <div className="flex items-center justify-between">

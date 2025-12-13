@@ -21,6 +21,10 @@ export interface VueloActivo {
   statusLabel: string;
   progressPercentage: number;
   orderIds?: string[]; // ✅ IDs de pedidos en el vuelo (para mostrar en tooltip)
+  orders?: Array<{
+    id: string;
+    packages: number;
+  }>; // ✅ Detalle de pedidos con cantidad de paquetes
 }
 
 /**

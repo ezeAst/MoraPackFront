@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart3, Bell, Globe, Play, Square, Calendar, Search, X } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
-import { getOperacionesStatus, startOperaciones, stopOperaciones, getPedidos, getPedidosEnVuelo, type Aeropuerto, type Pedido, type PedidoEnVuelo } from '../services/apiOperaciones';
+import { getOperacionesStatus, startOperaciones, stopOperaciones } from '../services/apiOperaciones';
 import type { OperacionesStatus } from '../types/operaciones';
 import { cacheService } from '../services/cacheService';
 
@@ -21,14 +21,6 @@ type OutgoingFlight = {
   occupancyPercentage: number;
 };
 
-type OutgoingOrder = {
-  orderId: string;
-  destination: string;
-  flightCode: string;
-  departureTime: string;
-  weight: number;
-  registeredTime: string;
-};
 
 type Warehouse = {
   name: string;
@@ -40,7 +32,6 @@ type Warehouse = {
   current?: number;
   occupancyPercentage?: number;
   outgoingFlights?: OutgoingFlight[];
-  outgoingOrders?: OutgoingOrder[]; // ✅ NUEVO: Pedidos próximos
 };
 
 type Route = {
@@ -59,10 +50,14 @@ export default function Dashboard() {
   const [showLegend, setShowLegend] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+
+  // Estados de búsqueda
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'order' | 'flight'>('order');
-  const [orderStatus, setOrderStatus] = useState<'all' | 'pending' | 'in_transit' | 'delivered'>('all');
-  const [searchResult, setSearchResult] = useState<any | null>(null);
+  const [searchType, setSearchType] = useState<'warehouse' | 'flight'>('warehouse');
+  const [searchResult, setSearchResult] = useState<{
+    type: 'warehouse' | 'flight';
+    data: any | null;
+  } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
@@ -265,6 +260,68 @@ export default function Dashboard() {
     } finally {
       setDeteniendo(false);
     }
+  };
+
+  /**
+   * Realiza la búsqueda de almacenes o vuelos
+   */
+  const handleSearch = () => {
+    if (!searchQuery.trim()) {
+      setSearchError('Por favor ingrese un código o ID para buscar');
+      setSearchResult(null);
+      setHasSearched(true);
+      return;
+    }
+
+    setSearchError(null);
+    setSearchResult(null);
+    setHasSearched(true);
+    const query = searchQuery.trim().toUpperCase();
+
+    if (!operacionesData) {
+      setSearchError('No hay datos cargados');
+      return;
+    }
+
+    if (searchType === 'warehouse') {
+      // Buscar en almacenes
+      const found = operacionesData.almacenes?.find(warehouse =>
+        warehouse.codigo.toUpperCase().includes(query) ||
+        warehouse.nombre.toUpperCase().includes(query)
+      );
+
+      if (found) {
+        setSearchResult({
+          type: 'warehouse',
+          data: found
+        });
+      } else {
+        setSearchError(`No se encontró ningún almacén con código/nombre que contenga "${searchQuery}"`);
+      }
+    } else if (searchType === 'flight') {
+      // Buscar en vuelos activos
+      const found = operacionesData.vuelosActivos?.find(flight =>
+        flight.id.toUpperCase().includes(query) ||
+        flight.flightCode.toUpperCase().includes(query)
+      );
+
+      if (found) {
+        setSearchResult({
+          type: 'flight',
+          data: found
+        });
+      } else {
+        setSearchError(`No se encontró ningún vuelo activo con ID/código que contenga "${searchQuery}"`);
+      }
+    }
+  };
+
+  const closeSearchModal = () => {
+    setShowSearchModal(false);
+    setSearchQuery('');
+    setSearchResult(null);
+    setSearchError(null);
+    setHasSearched(false);
   };
 
   /**
@@ -486,7 +543,6 @@ export default function Dashboard() {
     current: a.capacidadActual,
     occupancyPercentage: a.ocupacion,
     outgoingFlights: a.outgoingFlights, // ✅ Próximos vuelos desde este almacén
-    outgoingOrders: a.outgoingOrders, // ✅ NUEVO: Próximos pedidos a salir
   })) || [];
 
   // Rutas: crear líneas entre origen y destino de cada vuelo
@@ -564,6 +620,124 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Modal de Búsqueda */}
+      {showSearchModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header del modal */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Búsqueda en Operaciones</h3>
+              <button
+                onClick={closeSearchModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Contenido del modal */}
+            <div className="p-6 space-y-4">
+              {/* Selector de tipo de búsqueda */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ¿Qué desea buscar?
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="searchType"
+                      value="warehouse"
+                      checked={searchType === 'warehouse'}
+                      onChange={(e) => setSearchType(e.target.value as 'warehouse' | 'flight')}
+                      className="w-4 h-4 text-[#FF6600]"
+                    />
+                    <span className="text-sm text-gray-700">Almacén</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="searchType"
+                      value="flight"
+                      checked={searchType === 'flight'}
+                      onChange={(e) => setSearchType(e.target.value as 'warehouse' | 'flight')}
+                      className="w-4 h-4 text-[#FF6600]"
+                    />
+                    <span className="text-sm text-gray-700">Vuelo Activo</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Campo de búsqueda */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {searchType === 'warehouse' ? 'Código/Nombre del Almacén' : 'ID/Código del Vuelo'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                    autoFocus
+                    placeholder="Ingrese el valor a buscar..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                  />
+                  <button
+                    onClick={handleSearch}
+                    className="px-6 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium"
+                  >
+                    Buscar
+                  </button>
+                </div>
+              </div>
+
+              {/* Errores y Resultados */}
+              {searchError && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {searchError}
+                </div>
+              )}
+
+              {searchResult && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  {searchType === 'warehouse' && searchResult.data && (
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-green-900">Almacén encontrado:</h4>
+                      <p><span className="font-semibold">Código:</span> {searchResult.data.codigo}</p>
+                      <p><span className="font-semibold">Nombre:</span> {searchResult.data.nombre}</p>
+                      <p><span className="font-semibold">Ocupación:</span> {searchResult.data.ocupacion}%</p>
+                      <p><span className="font-semibold">Estado:</span> {searchResult.data.status}</p>
+                      <p><span className="font-semibold">Capacidad actual:</span> {searchResult.data.capacidadActual}/{searchResult.data.capacidad}</p>
+                      <p><span className="font-semibold">Ubicación:</span> ({searchResult.data.lat}, {searchResult.data.lon})</p>
+                    </div>
+                  )}
+                  {searchType === 'flight' && searchResult.data && (
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-green-900">Vuelo encontrado:</h4>
+                      <p><span className="font-semibold">ID:</span> {searchResult.data.id}</p>
+                      <p><span className="font-semibold">Código:</span> {searchResult.data.flightCode}</p>
+                      <p><span className="font-semibold">Ruta:</span> {searchResult.data.origin} → {searchResult.data.destination}</p>
+                      <p><span className="font-semibold">Salida:</span> {searchResult.data.departureTime}</p>
+                      <p><span className="font-semibold">Llegada:</span> {searchResult.data.arrivalTime}</p>
+                      <p><span className="font-semibold">Carga:</span> {searchResult.data.packages} kg de {searchResult.data.capacity} kg</p>
+                      <p><span className="font-semibold">Progreso:</span> {searchResult.data.progressPercentage}%</p>
+                      <p><span className="font-semibold">Estado:</span> {searchResult.data.statusLabel}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!hasSearched && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+                  Ingrese un criterio de búsqueda y presione Enter o haga clic en Buscar
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Configuración de Inicio */}
       {showStartModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -703,11 +877,13 @@ export default function Dashboard() {
           >
             {showLegend ? 'Ocultar leyenda' : 'Mostrar leyenda'}
           </button>
+          {/* Botón de Búsqueda */}
           <button
             onClick={() => setShowSearchModal(true)}
-            className="bg-white text-[#FF6600] px-4 py-2 rounded-lg font-medium shadow hover:bg-gray-100 flex items-center gap-2"
+            className="bg-[#FF6600] text-white px-4 py-2 rounded-lg font-medium shadow hover:bg-[#e55d00] flex items-center gap-2"
           >
-            <Search className="w-4 h-4" /> Buscar
+            <Search className="w-4 h-4" />
+            Buscar
           </button>
         </div>
       </div>
@@ -755,7 +931,7 @@ export default function Dashboard() {
                   }
                   if (!passesFilter) return null;
                   // Calcular rotación usando posición actual y destino
-                  const [originCoords, destCoords] = vuelo.route;
+                  const [, destCoords] = vuelo.route;
                   const rotation = calculateRotation(
                     vuelo.currentLat,
                     vuelo.currentLng,
