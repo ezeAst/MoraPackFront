@@ -5,10 +5,13 @@ import type { Order, Client, Route } from '../types';
 import { parsePedidosTxt } from '../utils/parsePedidosTxt';
 import { importarPedidosCompleto } from '../services/apiPedidos';
 import { getDestinos } from '../services/apiDestinos';
-import { importarPedidosEnLotes } from '../services/apiPedidos'; // ✅ Cambiar import
+import { importarPedidosEnLotes } from '../services/apiPedidos';
 import type { Destino } from '../services/apiDestinos';
 import { crearPedido } from '../services/apiPedidos';
 import { getPedidosRecientes } from "../services/apiPedidos";
+// ✅ NUEVOS IMPORTS PARA OPERACIONES DÍA A DÍA
+import { parsearArchivoPedidosOperaciones } from '../utils/parsePedidosOperaciones';
+import { importarPedidosOperaciones, type ImportarOperacionesResponse } from '../services/apiPedidos';
 
 const MOCK_CLIENTS: Client[] = [
   { id: '1', first_name: 'Juan', last_name: 'Pérez', birth_date: '1990-01-01', email: 'juan@example.com', phone: '123456789', created_at: '2025-10-01T09:00:00Z' },
@@ -91,6 +94,12 @@ export default function Pedidos() {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  
+  // ✅ NUEVOS ESTADOS PARA OPERACIONES DÍA A DÍA
+  const [archivoOperaciones, setArchivoOperaciones] = useState<File | null>(null);
+  const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
+  const [resultadoOperaciones, setResultadoOperaciones] = useState<ImportarOperacionesResponse | null>(null);
+  const [errorOperaciones, setErrorOperaciones] = useState<string | null>(null);
 
   useEffect(() => {
     loadOrders();
@@ -271,6 +280,37 @@ const onUpload = async () => {
     setProgress(0);
   }
 };
+
+  // ✅ NUEVA FUNCIÓN: Cargar archivo para Operaciones Día a Día
+  const handleCargarArchivoOperaciones = async () => {
+    if (!archivoOperaciones) {
+      alert('Por favor selecciona un archivo TXT');
+      return;
+    }
+
+    try {
+      setCargandoOperaciones(true);
+      setResultadoOperaciones(null);
+      setErrorOperaciones(null);
+
+      const contenido = await archivoOperaciones.text();
+      const { pedidos, errores } = parsearArchivoPedidosOperaciones(contenido);
+
+      if (pedidos.length === 0) {
+        throw new Error('No se encontraron pedidos válidos en el archivo');
+      }
+
+      const resultado = await importarPedidosOperaciones(pedidos);
+      setResultadoOperaciones(resultado);
+      setArchivoOperaciones(null);
+
+    } catch (error: any) {
+      console.error('❌ Error:', error);
+      setErrorOperaciones(error.message);
+    } finally {
+      setCargandoOperaciones(false);
+    }
+  };
 
   const handleRegisterClient = () => {
     const newId = String(clientIdCounter++);
@@ -593,6 +633,138 @@ const onUpload = async () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 🚀 NUEVA SECCIÓN: Cargar pedidos para Operaciones Día a Día */}
+      <div className="mt-8 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-lg p-6 border-2 border-blue-200">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 bg-blue-600 rounded-xl">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">
+              🚀 Cargar Pedidos para Operaciones Día a Día
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Usa el tiempo actual de la simulación para pedidos con ##
+            </p>
+          </div>
+        </div>
+
+        {/* Información del formato */}
+        <div className="bg-white rounded-lg p-4 mb-6 border border-blue-200">
+          <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+            📋 Formato esperado
+          </h3>
+          <div className="bg-gray-50 rounded px-3 py-2 font-mono text-sm text-gray-700 mb-3">
+            id_pedido-aaaammDD-hh-mm-dest-###-IdClien
+          </div>
+          <p className="text-sm text-gray-600 mb-2">
+            <strong>Ejemplo:</strong>
+          </p>
+          <div className="bg-gray-800 text-green-400 rounded px-3 py-2 font-mono text-xs space-y-1">
+            <div>100000021-202512##-##-##-SVMI-990-0007729</div>
+            <div>100000022-202512##-hh-mm-SKBO-450-0029194</div>
+            <div>100000023-20251215-14-30-SCEL-680-0028315</div>
+          </div>
+          <div className="mt-3 text-xs text-gray-600 space-y-1">
+            <p>• <code className="bg-gray-200 px-1 rounded">##</code> o <code className="bg-gray-200 px-1 rounded">DD</code>: Usa el día del tiempo simulado</p>
+            <p>• <code className="bg-gray-200 px-1 rounded">##</code> o <code className="bg-gray-200 px-1 rounded">hh</code>: Usa la hora del tiempo simulado</p>
+            <p>• <code className="bg-gray-200 px-1 rounded">##</code> o <code className="bg-gray-200 px-1 rounded">mm</code>: Usa el minuto del tiempo simulado</p>
+            <p>• Valores numéricos específicos (ej: 15, 14, 30): Usa esos valores exactos</p>
+          </div>
+        </div>
+
+        {/* Selector de archivo */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Seleccionar archivo TXT
+          </label>
+          <div className="flex gap-3">
+            <input
+              type="file"
+              accept=".txt"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setArchivoOperaciones(file);
+                  setResultadoOperaciones(null);
+                  setErrorOperaciones(null);
+                }
+              }}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            />
+            <button
+              onClick={handleCargarArchivoOperaciones}
+              disabled={!archivoOperaciones || cargandoOperaciones}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium transition-colors flex items-center gap-2"
+            >
+              {cargandoOperaciones ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Cargando...
+                </>
+              ) : (
+                <>
+                  📤 Cargar Pedidos
+                </>
+              )}
+            </button>
+          </div>
+          {archivoOperaciones && (
+            <p className="text-sm text-gray-600 mt-2">
+              📄 Archivo seleccionado: <strong>{archivoOperaciones.name}</strong>
+            </p>
+          )}
+        </div>
+
+        {/* Resultado exitoso */}
+        {resultadoOperaciones && (
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <h3 className="text-sm font-medium text-green-800">
+                  ✅ {resultadoOperaciones.mensaje}
+                </h3>
+                <div className="mt-2 text-sm text-green-700">
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Pedidos insertados: <strong>{resultadoOperaciones.pedidosInsertados.toLocaleString()}</strong></li>
+                    <li>Tiempo de carga: <strong>{resultadoOperaciones.tiempoMs}ms</strong></li>
+                    <li>Con tiempo simulado (##): <strong>{resultadoOperaciones.conTiempoSimulado}</strong></li>
+                    <li>Con tiempo del archivo: <strong>{resultadoOperaciones.conTiempoArchivo}</strong></li>
+                    <li>Tiempo simulado usado: <strong>{new Date(resultadoOperaciones.tiempoSimuladoUsado).toLocaleString('es-ES')}</strong></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {errorOperaciones && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">
+                  ❌ Error al cargar pedidos
+                </h3>
+                <p className="mt-1 text-sm text-red-700">{errorOperaciones}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {showClientSearch && (

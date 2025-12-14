@@ -209,3 +209,90 @@ export async function resetearCachePedidos(): Promise<void> {
 
   console.log('✅ Cache de pedidos reseteado');
 }
+/**
+ * ✅ NUEVO: Genera pedidos para operaciones día a día
+ */
+export interface GenerarPedidosOperacionesRequest {
+  fechaHoraInicio: string; // Formato: "YYYY-MM-DDTHH:mm:ss"
+  cantidadPedidos: number;
+  diasDistribucion?: number; // Default: 7 días
+}
+
+export interface GenerarPedidosOperacionesResponse {
+  pedidosGenerados: number;
+  tiempoMs: number;
+  fechaInicio: string;
+  primerIdGenerado: number;
+  ultimoIdGenerado: number;
+  mensaje: string;
+}
+
+export async function generarPedidosOperaciones(
+  request: GenerarPedidosOperacionesRequest
+): Promise<GenerarPedidosOperacionesResponse> {
+  console.log('🔧 Generando pedidos para operaciones día a día...', request);
+  
+  const res = await fetch(`${API_BASE}/pedidos/generarOperaciones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Error al generar pedidos: ${res.status}`);
+  }
+
+  const resultado = await res.json();
+  console.log('✅ Pedidos generados:', resultado);
+  
+  return resultado;
+}
+
+/**
+ * ✅ NUEVO: Importa pedidos para operaciones día a día
+ * Los pedidos con ## usan el tiempo actual de la simulación
+ */
+export interface PedidoOperacionDTO {
+  idPedido: string;
+  anho: number;
+  mes: number;
+  dia?: number;
+  hora?: number;
+  minuto?: number;
+  destino: string;
+  cantidad: number;
+  idCliente: string;
+  usarTiempoSimulado: boolean;
+}
+
+export interface ImportarOperacionesResponse {
+  pedidosInsertados: number;
+  tiempoMs: number;
+  conTiempoSimulado: number;
+  conTiempoArchivo: number;
+  tiempoSimuladoUsado: string;
+  mensaje: string;
+}
+
+export async function importarPedidosOperaciones(
+  pedidos: PedidoOperacionDTO[]
+): Promise<ImportarOperacionesResponse> {
+  console.log(`📦 Importando ${pedidos.length} pedidos para operaciones día a día...`);
+
+  const res = await fetch(`${API_BASE}/pedidos/importarOperaciones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pedidos),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Error al importar pedidos: ${res.status}`);
+  }
+
+  const resultado = await res.json();
+  console.log('✅ Pedidos importados:', resultado);
+  
+  return resultado;
+}
