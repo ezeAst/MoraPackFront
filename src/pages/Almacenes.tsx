@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Filter, RefreshCw, Package, X, Upload } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import type { Almacen, OperacionesStatus } from '../types/operaciones';
@@ -6,6 +7,7 @@ import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedid
 import { cacheService } from '../services/cacheService';
 
 export default function Almacenes() {
+  const location = useLocation();
   
   const [warehouses, setWarehouses] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +25,15 @@ export default function Almacenes() {
   useEffect(() => {
     loadWarehouses();
   }, []);
+
+  // Aplicar filtro inicial desde querystring (?codigo=XXX | ?almacen=XXX | ?warehouse=XXX)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const code = params.get('codigo') || params.get('almacen') || params.get('warehouse');
+    if (code) {
+      setAirportCodeFilterState(code);
+    }
+  }, [location.search]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
