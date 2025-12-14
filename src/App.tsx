@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Pedidos from './pages/Pedidos';
 import Almacenes from './pages/Almacenes';
 import Vuelos from './pages/Vuelos';
+import Planificacion from './pages/Planificacion';
 import Simulacion from './pages/Simulacion';
 import { SimulationProvider } from './contexts/SimulationContext';
 
@@ -19,6 +20,7 @@ function AppContent() {
     if (path.includes('/pedidos')) return 'pedidos';
     if (path.includes('/almacenes')) return 'almacenes';
     if (path.includes('/vuelos')) return 'vuelos';
+    if (path.includes('/planificacion')) return 'planificacion';
     if (path.includes('/simulacion')) return 'simulacion';
     return 'dashboard';
   };
@@ -40,6 +42,7 @@ function AppContent() {
           <Route path="/pedidos" element={<Pedidos />} />
           <Route path="/almacenes" element={<Almacenes />} />
           <Route path="/vuelos" element={<Vuelos />} />
+          <Route path="/planificacion" element={<Planificacion />} />
           <Route path="/simulacion" element={<Simulacion />} />
         </Routes>
       </div>

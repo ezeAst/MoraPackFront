@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Play, Pause, Square, Download,
+  Play, Square, Download,
   ChevronDown, ChevronUp, Info, Search, X
 } from 'lucide-react';
 import { Marker, Source, Layer } from 'react-map-gl';
@@ -8,7 +8,6 @@ import MapboxMap from '../components/MapboxMap';
 import * as api from '../services/api';
 import { CONTINENT_COLORS } from '../utils/colors';
 import { useSimulation } from '../contexts/SimulationContext';
-import nuevoAvion from '../Images/nuevoAvion.png'; // o la ruta que uses
 
 
 
@@ -25,7 +24,6 @@ export default function Simulacion() {
     currentTime,
     selectedScenario,
     startDateTime,
-    planningStatus,
     realTime,
     simulatedElapsedTime,
     realElapsedTime,
@@ -34,8 +32,6 @@ export default function Simulacion() {
     setSelectedScenario,
     setStartDateTime,
     startSimulation,
-    pauseSimulation,
-    resumeSimulation,
     stopSimulation,
   } = useSimulation();
   
@@ -128,40 +124,6 @@ export default function Simulacion() {
     return '#6B7280';                                                    // gris
   };
 
-  // Interpolar puntos en gran círculo (geodésica) para rutas curvas naturales
-  const interpolateGreatCircle = (start: [number, number], end: [number, number], numPoints: number = 50): [number, number][] => {
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-    const toDeg = (rad: number) => (rad * 180) / Math.PI;
-
-    const [lon1, lat1] = start;
-    const [lon2, lat2] = end;
-
-    const φ1 = toRad(lat1);
-    const φ2 = toRad(lat2);
-    const Δλ = toRad(lon2 - lon1);
-
-    const points: [number, number][] = [];
-
-    for (let i = 0; i <= numPoints; i++) {
-      const f = i / numPoints;
-
-      // Fórmula de interpolación esférica (slerp)
-      const a = Math.sin((1 - f) * Δλ) / Math.sin(Δλ);
-      const b = Math.sin(f * Δλ) / Math.sin(Δλ);
-
-      const x = a * Math.cos(φ1) * Math.cos(toRad(lon1)) + b * Math.cos(φ2) * Math.cos(toRad(lon2));
-      const y = a * Math.cos(φ1) * Math.sin(toRad(lon1)) + b * Math.cos(φ2) * Math.sin(toRad(lon2));
-      const z = a * Math.sin(φ1) + b * Math.sin(φ2);
-
-      const φi = Math.atan2(z, Math.sqrt(x * x + y * y));
-      const λi = Math.atan2(y, x);
-
-      points.push([toDeg(λi), toDeg(φi)]);
-    }
-
-    return points;
-  };
-
   // === Helpers de ocupación (aviones) ===
   // Devuelve carga actual y capacidad, tolerando distintos nombres que pueda traer el backend.
   const getFlightCapacityInfo = (f: any) => {
@@ -229,24 +191,6 @@ export default function Simulacion() {
       console.error('Error:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePause = async () => {
-    if (!simulationId) return;
-    try {
-      await pauseSimulation();
-    } catch (err) {
-      console.error('Error al pausar:', err);
-    }
-  };
-
-  const handleResume = async () => {
-    if (!simulationId) return;
-    try {
-      await resumeSimulation();
-    } catch (err) {
-      console.error('Error al reanudar:', err);
     }
   };
 
@@ -326,16 +270,6 @@ export default function Simulacion() {
   console.log('🔍 Vuelos in_flight:', flights.filter(f => f.status === 'in_flight').length);
   console.log('🔍 Sample vuelo:', flights[0]);
 
-  // Warehouses para el mapa
-  const warehousesForMap = warehouses.map(w => ({
-    name: w.name,
-    lat: w.lat,
-    lng: w.lng,
-    status: w.status as 'normal' | 'warning' | 'critical',
-    capacity: w.capacity,
-    current: w.current,
-  }));
-
   // Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
   // Usamos useMemo para evitar duplicaciones de markers en el mapa
 // Vuelos filtrados: solo en vuelo (in_flight) y que coincidan con filtro de origen
@@ -357,74 +291,6 @@ const filteredFlights = useMemo(() => {
     return true;
   });
 }, [flights, legend.america, legend.europa, legend.asia]);
-
-// Proyección Web Mercator (misma que usa Mapbox)
-const toRadians = (deg: number) => (deg * Math.PI) / 180;
-
-const projectToMercator = (lng: number, lat: number) => {
-  const λ = toRadians(lng);
-  const φ = toRadians(lat);
-  const x = λ;
-  const y = Math.log(Math.tan(Math.PI / 4 + φ / 2));
-  return { x, y };
-};
-
-const getPlaneAngle = (flight: api.Flight): number => {
-  const route = flight.route;
-  if (!route || route.length < 2) return 0;
-
-  const currentLng = flight.currentLng;
-  const currentLat = flight.currentLat;
-
-  // 1) Buscar el punto de la ruta más cercano a la posición actual del avión
-  let closestIndex = 0;
-  let minDist = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < route.length; i++) {
-    const [lng, lat] = route[i];
-    const dLng = lng - currentLng;
-    const dLat = lat - currentLat;
-    const dist = dLng * dLng + dLat * dLat;
-    if (dist < minDist) {
-      minDist = dist;
-      closestIndex = i;
-    }
-  }
-
-  // 2) Elegir el tramo (segmento) de la ruta más cercano
-  let idx1: number;
-  let idx2: number;
-
-  if (closestIndex === route.length - 1) {
-    idx1 = route.length - 2;
-    idx2 = route.length - 1;
-  } else {
-    idx1 = closestIndex;
-    idx2 = closestIndex + 1;
-  }
-
-  const [lng1, lat1] = route[idx1];
-  const [lng2, lat2] = route[idx2];
-
-  // 3) Proyectar a coordenadas Web Mercator
-  const p1 = projectToMercator(lng1, lat1);
-  const p2 = projectToMercator(lng2, lat2);
-
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-
-  // 4) Calcular ángulo en pantalla (eje Y hacia abajo → invertimos dy)
-  const angleRad = Math.atan2(-dy, dx);
-  const angleDeg = (angleRad * 180) / Math.PI;
-
-  // El SVG del avión está apuntando "a la derecha" (este) cuando angleDeg = 0,
-  // por eso devolvemos el ángulo tal cual. Si lo vieras 90° girado, aquí se ajusta.
-  return angleDeg;
-};
-
-
-
-
 
   return (
     <div className="h-full bg-gray-50 overflow-hidden flex flex-col">

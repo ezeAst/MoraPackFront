@@ -108,16 +108,6 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
     }
   };
 
-  // Función para obtener el estado del vuelo en español
-  const getFlightStatusText = (status: string) => {
-    switch (status) {
-      case 'in_flight': return '✈️ En vuelo';
-      case 'landed': return '✓ Aterrizó';
-      case 'scheduled': return '⏰ Programado';
-      default: return status;
-    }
-  };
-
  const getWarehouseColor = (status: string) => {
   switch (status) {
     case 'critical': return '#DC3545';

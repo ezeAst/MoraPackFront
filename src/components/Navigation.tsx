@@ -14,6 +14,7 @@ export default function Navigation({ activeTab, onTabChange }: NavigationProps) 
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'planificacion', label: 'Planificación' },
     { id: 'pedidos', label: 'Pedidos' },
     { id: 'almacenes', label: 'Almacenes' },
     { id: 'vuelos', label: 'Vuelos' },
