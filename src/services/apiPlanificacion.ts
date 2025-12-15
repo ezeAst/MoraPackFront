@@ -1,6 +1,7 @@
 // src/services/apiPlanificacion.ts
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = "http://localhost:8080/api"
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -31,11 +32,13 @@ export interface PedidoResumen {
 }
 
 export interface Tramo {
-  id?: string;
+  orden: number;
   origen: string;
   destino: string;
   fecha: string;
-  hora: string;
+  horaSalida: string;
+  horaLlegada: string;
+  esActual?: boolean;
   vuelo?: {
     id: string;
     flightCode: string;
@@ -43,12 +46,19 @@ export interface Tramo {
 }
 
 export interface AsignacionPedido {
-  id: string;
+  pedidoId: string;
   estado: string;
   tramoActual: number;
-  cantidad: number;
+  cantidadPaquetes: number;
   destino: string;
-  tramos: Tramo[];
+  rutas: Array<{
+    rutaId: number;
+    cantidad: number;
+    totalTramos: number;
+    tramos: Tramo[];
+  }> | null;
+  totalRutas: number;
+  totalVuelos: number; // ✅ Para mostrar en el UI
 }
 
 export interface DetallePedido {
@@ -116,10 +126,14 @@ export async function getPedidosEntregados(): Promise<PedidoResumen[]> {
   }
 }
 
-// Obtener asignación de un pedido específico
+// ✅ ACTUALIZADO - Obtener asignación de un pedido específico
 export async function getAsignacionPedido(pedidoId: string): Promise<AsignacionPedido> {
   try {
-    return await fetchJson<AsignacionPedido>(`${API_BASE_URL}/operaciones/pedidos/${pedidoId}/asignacion`);
+    const response = await fetchJson<AsignacionPedido>(
+      `${API_BASE_URL}/operaciones/pedidos/${pedidoId}/asignacion`
+    );
+    
+    return response;
   } catch (error) {
     console.error('Error al obtener asignación del pedido:', error);
     throw error;

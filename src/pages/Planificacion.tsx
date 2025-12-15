@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, X, MapPin, Calendar, User, AlertCircle, RefreshCw, Truck } from 'lucide-react';
+import { Package, X, MapPin, Calendar, User, AlertCircle, RefreshCw, Truck, Plane, Clock, ArrowRight, Navigation } from 'lucide-react';
 import {
   getResumenEstado,
   getPedidos,
@@ -27,6 +27,7 @@ export default function Planificacion() {
   // Filtros
   const [filtroCodiGo, setFiltroCodiGo] = useState('');
   const [filtroOrigen, setFiltroOrigen] = useState('Todos');
+  const [filtroEstado, setFiltroEstado] = useState('Todos');
 
   // Modal de detalle
   const [showDetalleModal, setShowDetalleModal] = useState(false);
@@ -65,17 +66,15 @@ export default function Planificacion() {
         () => getResumenEstado(),
         30000
       ));
-      // Asegurar tipos del resumen y evitar NaN
       const safeResumen: ResumenEstado = Object.fromEntries(
         Object.entries(resumendatos || {}).map(([k, v]) => [k, typeof v === 'number' ? v : Number(v) || 0])
       );
       setResumen(safeResumen);
 
-      // Obtener pedidos: combinar por estado para asegurar lista
+      // Obtener pedidos
       const stalePedidos = cacheService.getStale<PedidoConDetalle[]>('planificacion-pedidos');
       let pedidosDatos: PedidoConDetalle[] | null = stalePedidos || null;
       if (!pedidosDatos || forceRefresh) {
-        // Intentar endpoint general primero
         try {
           const all = await getPedidos();
           pedidosDatos = (all || []).map(p => ({ ...p }));
@@ -92,9 +91,8 @@ export default function Planificacion() {
             ...entregadosList.map(p => ({ ...p, estado: p.estado || 'ENTREGADO' })),
           ];
         }
-        cacheService.set('planificacion-pedidos', pedidosDatos, 30000);
+        cacheService.set('planificacion-pedidos', pedidosDatos);
       }
-      // Normalizar pedidos (tipos y claves mínimas)
       const normalized = (pedidosDatos || []).map(p => ({
         id: String(p.id),
         destino: p.destino || '-',
@@ -140,18 +138,19 @@ export default function Planificacion() {
   const pedidosFiltrados = pedidos.filter(p => {
     const matchesCodigo = !filtroCodiGo || (p.id || '').toUpperCase().includes(filtroCodiGo.toUpperCase());
     const matchesDestino = filtroOrigen === 'Todos' || p.destino === filtroOrigen;
-    return matchesCodigo && matchesDestino;
+    const matchesEstado = filtroEstado === 'Todos' || p.estado === filtroEstado;
+    return matchesCodigo && matchesDestino && matchesEstado;
   });
 
-  // Obtener orígenes únicos para filtro
+  // Obtener valores únicos para filtros
   const origenesUnicos = Array.from(new Set(pedidos.map(p => p.destino))).filter(Boolean);
+  const estadosUnicos = Array.from(new Set(pedidos.map(p => p.estado))).filter(Boolean);
 
   // Contar pedidos por estado
   const asignados = Number(resumen['ASIGNADO']) || 0;
   const entregados = Number(resumen['ENTREGADO']) || 0;
   const enTransito = Number(resumen['EN_TRANSITO']) || 0;
   const noAsignados = Number(resumen['NO_ASIGNADO']) || 0;
-  // Recalcular totales desde pedidos para mayor precisión
   const totalPedidos = pedidos.length || Object.values(resumen)
     .map((v) => (typeof v === 'number' ? v : Number(v) || 0))
     .reduce((a, b) => a + b, 0);
@@ -169,171 +168,169 @@ export default function Planificacion() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-[#FF6600] text-white px-8 py-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Planificación de Entregas</h1>
-            <p className="text-lg mt-1">Estado en tiempo real de asignación y rutas de pedidos</p>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900">📋 Planificación de Rutas</h1>
+              <p className="text-gray-600 mt-2">Gestiona y visualiza las rutas de todos los pedidos</p>
+            </div>
+            <button
+              onClick={() => loadData(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-[#FF6600] hover:bg-[#e65c00] text-white rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Actualizar
+            </button>
           </div>
-          <button
-            onClick={() => loadData(true)}
-            className="px-4 py-2 bg-white text-[#FF6600] rounded-lg hover:bg-gray-100 font-medium flex items-center gap-2 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Actualizar
-          </button>
+
+          {/* Cards de Resumen */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Total Pedidos</p>
+                  <p className="text-3xl font-bold text-gray-900">{totalPedidos}</p>
+                </div>
+                <Package className="w-12 h-12 text-blue-500 opacity-20" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Entregados</p>
+                  <p className="text-3xl font-bold text-gray-900">{entregados}</p>
+                </div>
+                <Truck className="w-12 h-12 text-green-500 opacity-20" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">En Tránsito</p>
+                  <p className="text-3xl font-bold text-gray-900">{enTransito}</p>
+                </div>
+                <Plane className="w-12 h-12 text-yellow-500 opacity-20" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Faltan Entregar</p>
+                  <p className="text-3xl font-bold text-gray-900">{faltanEntregar}</p>
+                </div>
+                <AlertCircle className="w-12 h-12 text-red-500 opacity-20" />
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros */}
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Código de Pedido</label>
+                <input
+                  type="text"
+                  value={filtroCodiGo}
+                  onChange={(e) => setFiltroCodiGo(e.target.value)}
+                  placeholder="Buscar por código..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Destino</label>
+                <select
+                  value={filtroOrigen}
+                  onChange={(e) => setFiltroOrigen(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                >
+                  <option value="Todos">Todos los destinos</option>
+                  {origenesUnicos.map(origen => (
+                    <option key={origen} value={origen}>{origen}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                <select
+                  value={filtroEstado}
+                  onChange={(e) => setFiltroEstado(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                >
+                  <option value="Todos">Todos los estados</option>
+                  {estadosUnicos.map(estado => (
+                    <option key={estado} value={estado}>{estado}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Contenido scrolleable */}
-      <div className="flex-1 overflow-y-auto p-8">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Resumen de estado */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-6">Resumen de Operaciones</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* Asignados */}
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-              <p className="text-sm text-blue-700 font-medium mb-1">Asignados</p>
-              <p className="text-3xl font-bold text-blue-900">{asignados}</p>
-              <p className="text-xs text-blue-600 mt-2">Con ruta definida</p>
-            </div>
-
-            {/* En Tránsito */}
-            <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
-              <p className="text-sm text-orange-700 font-medium mb-1">En Tránsito</p>
-              <p className="text-3xl font-bold text-orange-900">{enTransito}</p>
-              <p className="text-xs text-orange-600 mt-2">En vuelo actualmente</p>
-            </div>
-
-            {/* Entregados */}
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-              <p className="text-sm text-green-700 font-medium mb-1">Entregados</p>
-              <p className="text-3xl font-bold text-green-900">{entregados}</p>
-              <p className="text-xs text-green-600 mt-2">Completados</p>
-            </div>
-
-            {/* Falta Entregar */}
-            <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 border border-yellow-200">
-              <p className="text-sm text-yellow-700 font-medium mb-1">Falta Entregar</p>
-              <p className="text-3xl font-bold text-yellow-900">{faltanEntregar}</p>
-              <p className="text-xs text-yellow-600 mt-2">En espera o tránsito</p>
-            </div>
-
-            {/* No Asignados */}
-            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border border-red-200">
-              <p className="text-sm text-red-700 font-medium mb-1">No Asignados</p>
-              <p className="text-3xl font-bold text-red-900">{noAsignados}</p>
-              <p className="text-xs text-red-600 mt-2">Pendiente asignación</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filtros */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <label className="text-sm font-medium text-gray-700 mb-2 block">
-                Buscar por código de pedido
-              </label>
-              <input
-                type="text"
-                value={filtroCodiGo}
-                onChange={(e) => setFiltroCodiGo(e.target.value)}
-                placeholder="Ej: PED-001"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-              />
-            </div>
-
-            <div className="flex-1">
-              <label className="text-sm font-medium text-gray-700 mb-2 block">
-                Filtrar por destino
-              </label>
-              <select
-                value={filtroOrigen}
-                onChange={(e) => setFiltroOrigen(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-              >
-                <option value="Todos">Todos los destinos</option>
-                {origenesUnicos.map(origen => (
-                  <option key={origen} value={origen}>{origen}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabla de pedidos */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        {/* Tabla de Pedidos */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Código</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Cliente</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Destino</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Paquetes</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Estado</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Acciones</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destino</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {pedidosFiltrados.map(pedido => (
+                {pedidosFiltrados.length > 0 ? pedidosFiltrados.map((pedido) => (
                   <tr key={pedido.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <span className="font-mono font-semibold text-gray-800">{pedido.id}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-gray-700">{(pedido as any).clientId || pedido.cliente || '-'}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 text-gray-700">
-                        <MapPin className="w-4 h-4 text-gray-500" />
-                        {pedido.destino}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 text-gray-500" />
-                        <span className="font-semibold">{pedido.cantidad}</span>
+                        <Package className="w-4 h-4 text-gray-400" />
+                        <span className="font-medium text-gray-900">#{pedido.id}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-700">{pedido.destino}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-700">{pedido.cantidad}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
                         pedido.estado === 'ENTREGADO' ? 'bg-green-100 text-green-800' :
-                        pedido.estado === 'EN_TRANSITO' ? 'bg-blue-100 text-blue-800' :
-                        pedido.estado === 'ASIGNADO' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
+                        pedido.estado === 'EN_TRANSITO' ? 'bg-yellow-100 text-yellow-800' :
+                        pedido.estado === 'ASIGNADO' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
                       }`}>
-                        {pedido.estado || 'Desconocido'}
+                        {pedido.estado}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <button
                         onClick={() => handleVerDetalle(pedido)}
-                        className="px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center gap-2 transition-colors"
+                        className="text-[#FF6600] hover:text-[#e65c00] font-medium text-sm flex items-center gap-1"
                       >
-                        <Truck className="w-4 h-4" />
-                        Detalle
+                        <Navigation className="w-4 h-4" />
+                        Ver Ruta
                       </button>
                     </td>
                   </tr>
-                ))}
-
-                {pedidosFiltrados.length === 0 && (
+                )) : (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                      {totalPedidos > 0
-                        ? 'No hay pedidos que coincidan con los filtros seleccionados'
-                        : 'No hay pedidos disponibles en este momento'}
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <div className="text-gray-400">
+                        <Package className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                        <p className="text-lg font-medium">No se encontraron pedidos</p>
+                        <p className="text-sm">Intenta ajustar los filtros de búsqueda</p>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -345,20 +342,27 @@ export default function Planificacion() {
 
       {/* Modal de Detalle */}
       {showDetalleModal && selectedPedido && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header del modal */}
-            <div className="bg-[#FF6600] text-white px-6 py-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">Detalles de Asignación</h2>
-                <p className="text-sm opacity-90 mt-1">Pedido: {selectedPedido.id}</p>
+            <div className="bg-gradient-to-r from-[#FF6600] to-[#ff8533] text-white p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <Plane className="w-6 h-6" />
+                    Ruta Completa del Pedido
+                  </h2>
+                  <p className="text-white/90 mt-1">
+                    ID: #{selectedPedido.id} • Destino final: {selectedPedido.destino}
+                  </p>
+                </div>
+                <button
+                  onClick={handleCloseModal}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
               </div>
-              <button
-                onClick={handleCloseModal}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
             </div>
 
             {/* Contenido del modal */}
@@ -374,103 +378,148 @@ export default function Planificacion() {
                 <div className="flex items-center justify-center py-12">
                   <div className="text-center">
                     <div className="w-12 h-12 border-3 border-[#FF6600] border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                    <p className="text-gray-600">Cargando detalles...</p>
+                    <p className="text-gray-600">Cargando detalles de la ruta...</p>
                   </div>
                 </div>
               ) : selectedPedido.asignacion ? (
                 <>
                   {/* Información básica */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-1">Cliente</p>
-                      <p className="font-semibold text-gray-800">{selectedPedido.cliente || '-'}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+                      <p className="text-sm text-blue-700 mb-1 flex items-center gap-1">
+                        <User className="w-4 h-4" />
+                        Cliente
+                      </p>
+                      <p className="font-bold text-blue-900">{selectedPedido.cliente || 'N/A'}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-1">Cantidad de Paquetes</p>
-                      <p className="font-semibold text-gray-800">{selectedPedido.cantidad}</p>
+                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+                      <p className="text-sm text-purple-700 mb-1 flex items-center gap-1">
+                        <Package className="w-4 h-4" />
+                        Paquetes
+                      </p>
+                      <p className="font-bold text-purple-900">{selectedPedido.cantidad}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-1">Estado Actual</p>
-                      <p className="font-semibold text-gray-800">{selectedPedido.asignacion.estado}</p>
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
+                      <p className="text-sm text-green-700 mb-1 flex items-center gap-1">
+                        <Plane className="w-4 h-4" />
+                        Total Rutas
+                      </p>
+                      <p className="font-bold text-green-900">
+                        {selectedPedido.asignacion.totalRutas || 0}
+                      </p>
+                    </div>
+                    <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
+                      <p className="text-sm text-orange-700 mb-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        Estado
+                      </p>
+                      <p className="font-bold text-orange-900">{selectedPedido.asignacion.estado}</p>
                     </div>
                   </div>
 
-                  {/* Ruta y Tramos */}
+                  {/* Rutas Múltiples */}
                   <div>
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">Ruta Asignada</h3>
-                    <div className="space-y-3">
-                      {Array.isArray(selectedPedido.asignacion.tramos) && selectedPedido.asignacion.tramos.length > 0 ? selectedPedido.asignacion.tramos.map((tramo, index) => (
-                        <div
-                          key={index}
-                          className={`p-4 rounded-lg border-2 ${
-                            index === selectedPedido.asignacion!.tramoActual
-                              ? 'bg-blue-50 border-blue-300'
-                              : 'bg-gray-50 border-gray-200'
-                          }`}
-                        >
-                          <div className="flex items-start gap-4">
-                            <div className="flex flex-col items-center">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-                                index === selectedPedido.asignacion!.tramoActual
-                                  ? 'bg-blue-500 text-white'
-                                  : index < selectedPedido.asignacion!.tramoActual
-                                  ? 'bg-green-500 text-white'
-                                  : 'bg-gray-300 text-white'
-                              }`}>
-                                {index + 1}
-                              </div>
-                              {index < selectedPedido.asignacion!.tramos.length - 1 && (
-                                <div className="h-8 w-1 bg-gray-300 mt-2"></div>
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-semibold text-gray-800">
-                                {tramo.origen} → {tramo.destino}
-                              </p>
-                              <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-600">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="w-4 h-4" />
-                                  {tramo.fecha}
-                                </div>
-                                <div>
-                                  Hora: {tramo.hora}
-                                </div>
-                                {tramo.vuelo && (
-                                  <div className="flex items-center gap-1">
-                                    <Package className="w-4 h-4" />
-                                    Vuelo: {tramo.vuelo.flightCode}
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                      <Plane className="w-5 h-5 text-[#FF6600]" />
+                      Itinerario Completo ({selectedPedido.asignacion.totalRutas || 0} rutas)
+                    </h3>
+                    
+                    {selectedPedido.asignacion.rutas && selectedPedido.asignacion.rutas.length > 0 ? (
+                      <div className="space-y-6">
+                        {selectedPedido.asignacion.rutas.map((ruta: any, rutaIndex: number) => (
+                          <div key={ruta.rutaId} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
+                            <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                              <span className="bg-[#FF6600] text-white px-3 py-1 rounded-full text-sm">
+                                Ruta {rutaIndex + 1}
+                              </span>
+                              <span className="text-gray-600 text-sm">
+                                ({ruta.cantidad} paquetes)
+                              </span>
+                            </h4>
+                            
+                            <div className="space-y-3">
+                              {ruta.tramos.map((tramo: any, index: number) => {
+                                const tramoActualIndex = selectedPedido.asignacion?.tramoActual ?? 0;
+                                const esActual = index === tramoActualIndex;
+                                const esCompletado = index < tramoActualIndex;
+                                
+                                return (
+                                  <div
+                                    key={index}
+                                    className={`p-4 rounded-lg border-2 transition-all ${
+                                      esActual
+                                        ? 'bg-gradient-to-r from-blue-50 to-blue-100 border-blue-400 shadow-lg'
+                                        : esCompletado
+                                        ? 'bg-gradient-to-r from-green-50 to-green-100 border-green-300'
+                                        : 'bg-white border-gray-200'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-4">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                                        esActual
+                                          ? 'bg-blue-500 text-white'
+                                          : esCompletado
+                                          ? 'bg-green-500 text-white'
+                                          : 'bg-gray-300 text-gray-600'
+                                      }`}>
+                                        {esCompletado ? '✓' : index + 1}
+                                      </div>
+
+                                      <div className="flex-1">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-bold text-gray-800">{tramo.origen}</span>
+                                            <ArrowRight className="w-4 h-4 text-gray-400" />
+                                            <span className="font-bold text-gray-800">{tramo.destino}</span>
+                                          </div>
+                                          {esActual && (
+                                            <span className="bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                                              EN CURSO
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                                          <div className="flex items-center gap-1">
+                                            <Calendar className="w-3 h-3" />
+                                            <span>{tramo.fecha}</span>
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <Clock className="w-3 h-3" />
+                                            <span>{tramo.horaSalida} - {tramo.horaLlegada}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
                                   </div>
-                                )}
-                              </div>
-                              {index === selectedPedido.asignacion!.tramoActual && (
-                                <div className="mt-2 inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold">
-                                  Tramo Actual
-                                </div>
-                              )}
+                                );
+                              })}
                             </div>
                           </div>
-                        </div>
-                      )) : (
-                        <div className="p-6 bg-gray-50 border border-gray-200 rounded-lg text-center text-gray-600">
-                          No hay tramos disponibles para este pedido.
-                        </div>
-                      )}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-6 bg-gray-50 border border-gray-200 rounded-lg text-center text-gray-600">
+                        <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <p>No hay rutas disponibles para este pedido</p>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
                 <div className="text-center py-12">
                   <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 text-lg">No hay asignación disponible para este pedido</p>
+                  <p className="text-gray-400 text-sm mt-2">Este pedido aún no ha sido planificado</p>
                 </div>
               )}
             </div>
 
             {/* Footer del modal */}
-            <div className="bg-gray-50 px-6 py-4 border-t">
+            <div className="bg-gray-50 px-6 py-4 border-t flex gap-3">
               <button
                 onClick={handleCloseModal}
-                className="w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                className="flex-1 px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
               >
                 Cerrar
               </button>
