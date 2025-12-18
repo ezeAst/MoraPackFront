@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Filter, RefreshCw, Package, X, Upload } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Filter, RefreshCw, Package, X, Upload, MapPin } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import type { Almacen, OperacionesStatus } from '../types/operaciones';
 import { getPedidosPorAlmacen, type PedidoEnAlmacen } from '../services/apiPedidos';
@@ -8,6 +8,7 @@ import { cacheService } from '../services/cacheService';
 
 export default function Almacenes() {
   const location = useLocation();
+  const navigate = useNavigate();
   
   const [warehouses, setWarehouses] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +83,11 @@ export default function Almacenes() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerEnMapa = (warehouse: Almacen) => {
+    // Navegar al dashboard con el código del almacén como parámetro
+    navigate(`/?codigo=${warehouse.codigo}`);
   };
 
   const handleVerPedidos = async (warehouse: Almacen) => {
@@ -311,6 +317,13 @@ export default function Almacenes() {
                       >
                         <Package className="w-4 h-4" />
                         Ver pedidos
+                      </button>
+                      <button
+                        onClick={() => handleVerEnMapa(warehouse)}
+                        className="w-full px-4 py-2 bg-[#FF6600] hover:bg-[#e55a00] text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <MapPin className="w-4 h-4" />
+                        Ver en mapa
                       </button>
                     </div>
                   </div>

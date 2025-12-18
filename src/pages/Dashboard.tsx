@@ -21,6 +21,15 @@ type OutgoingFlight = {
   occupancyPercentage: number;
 };
 
+type OutgoingOrder = {
+  orderId: string;
+  destination: string;
+  flightCode: string;
+  departureTime: string;
+  weight: number;
+  registeredTime: string;
+};
+
 
 type Warehouse = {
   name: string;
@@ -32,6 +41,7 @@ type Warehouse = {
   current?: number;
   occupancyPercentage?: number;
   outgoingFlights?: OutgoingFlight[];
+  outgoingOrders?: OutgoingOrder[];  // ✅ AGREGAR ESTA LÍNEA
 };
 
 type Route = {
@@ -84,6 +94,7 @@ export default function Dashboard() {
 
   // Estado para el reloj en tiempo real
   const [tiempoActual, setTiempoActual] = useState<string>('');
+  const [tiempoTranscurrido, setTiempoTranscurrido] = useState<string>('0d 0h 0m');
 
   // ==================== CARGA INICIAL ====================
   useEffect(() => {
@@ -116,6 +127,25 @@ export default function Dashboard() {
       console.error('Error al cargar datos iniciales:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const formatearTiempoTranscurrido = (inicio: string, actual: string): string => {
+    try {
+      const inicioDate = new Date(inicio);
+      const actualDate = new Date(actual);
+      const diffMs = actualDate.getTime() - inicioDate.getTime();
+      
+      if (diffMs < 0) return '0d 0h 0m';
+      
+      const diffSeconds = Math.floor(diffMs / 1000);
+      const days = Math.floor(diffSeconds / 86400);
+      const hours = Math.floor((diffSeconds % 86400) / 3600);
+      const minutes = Math.floor((diffSeconds % 3600) / 60);
+      
+      return `${days}d ${hours}h ${minutes}m`;
+    } catch (e) {
+      return '0d 0h 0m';
     }
   };
 
@@ -168,7 +198,11 @@ export default function Dashboard() {
         const minutes = String(fecha.getMinutes()).padStart(2, '0');
         const seconds = String(fecha.getSeconds()).padStart(2, '0');
         
-        setTiempoActual(`${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+        const nuevoTiempo = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        setTiempoActual(nuevoTiempo);
+        if (operacionesData.inicioOperaciones) {
+          setTiempoTranscurrido(formatearTiempoTranscurrido(operacionesData.inicioOperaciones, nuevoTiempo));
+        }
       }
     }, 1000); // 1 segundo
 
@@ -435,6 +469,7 @@ export default function Dashboard() {
     current: a.capacidadActual,
     occupancyPercentage: a.ocupacion,
     outgoingFlights: a.outgoingFlights, // ✅ Próximos vuelos desde este almacén
+    outgoingOrders: a.outgoingOrders,   // ✅ AGREGAR ESTA LÍNEA
   })) || [];
 
   // Rutas: crear líneas entre origen y destino de cada vuelo
@@ -718,10 +753,18 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold">Panel de Operaciones Globales</h1>
 
         {(operacionesData?.usandoTiempoSimulado && tiempoActual) ? (
-          <div className="flex items-center gap-4 flex-wrap mt-0.5">
-            <p className="text-sm font-bold m-0">
-              ⏰ {tiempoActual}
-            </p>
+          <div className="flex items-center gap-3 flex-wrap mt-0.5">
+            <div className="bg-white/20 rounded px-2 py-1">
+              <p className="text-[10px] font-semibold opacity-90">Tiempo simulado</p>
+              <p className="text-sm font-bold m-0">⏰ {tiempoActual}</p>
+            </div>
+
+            {operacionesData?.activo && operacionesData.inicioOperaciones && (
+              <div className="bg-purple-500/40 rounded px-2 py-1">
+                <p className="text-[10px] font-semibold opacity-90">Transcurrido</p>
+                <p className="text-sm font-bold m-0">📊 {tiempoTranscurrido}</p>
+              </div>
+            )}
 
             <p className="text-sm m-0 font-bold">
               {operacionesData?.activo
@@ -847,6 +890,9 @@ export default function Dashboard() {
                       key={vuelo.id}
                       longitude={vuelo.currentLng}
                       latitude={vuelo.currentLat}
+                        style={{
+    zIndex: 100  // ✅ Los aviones siempre por encima de almacenes normales (z:1)
+  }}
                     >
                       <div 
                         className="relative group cursor-pointer"

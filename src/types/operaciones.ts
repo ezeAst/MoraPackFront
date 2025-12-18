@@ -42,6 +42,15 @@ export interface OutgoingFlight {
   occupancyPercentage: number;
 }
 
+export interface OutgoingOrder {
+  orderId: string;
+  destination: string;
+  flightCode: string;
+  departureTime: string;
+  weight: number;
+  registeredTime: string;
+}
+
 /**
  * Almacén con información de ocupación
  */
@@ -54,7 +63,8 @@ export interface Almacen {
   status: 'normal' | 'warning' | 'critical';
   lat: number;
   lon: number;
-  outgoingFlights?: OutgoingFlight[]; // ✅ Vuelos programados desde este almacén
+  outgoingFlights?: OutgoingFlight[];
+  outgoingOrders?: OutgoingOrder[]; // ✅ Vuelos programados desde este almacén
 }
 
 /**

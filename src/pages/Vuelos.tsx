@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, ChangeEvent  } from 'react';
-import { Plane, Download, RefreshCcw, Package, X, Upload } from 'lucide-react';
+import { Plane, Download, RefreshCcw, Package, X, Upload, AlertTriangle } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import { uploadVuelosFile } from '../services/apiVuelos';
 import { useSearchParams } from 'react-router-dom';
 import { cacheService } from '../services/cacheService';
+import Cancelaciones from './Cancelaciones'; // ✅ NUEVO
 
 // Intervalo de polling (ms)
 const POLLING_INTERVAL = 5000;
@@ -43,15 +44,17 @@ function formatRemaining(seconds: number): string {
 export default function Vuelos() {
   const [searchParams] = useSearchParams();
   
+  // ✅ NUEVO - Estado para pestañas
+  const [activeTab, setActiveTab] = useState<'vuelos' | 'cancelaciones'>('vuelos');
+  
   const [flights, setFlights] = useState<VistaVuelo[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
   const [destinationFilter, setDestinationFilter] = useState<string>('Todos');
-  const [flightCodeFilter, setFlightCodeFilter] = useState<string>(''); // Nuevo filtro por código de vuelo
+  const [flightCodeFilter, setFlightCodeFilter] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<number | null>(null);
 
-  // Estados para el modal de pedidos
   const [showPedidosModal, setShowPedidosModal] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState<VistaVuelo | null>(null);
   const [pedidosEnVuelo, setPedidosEnVuelo] = useState<Array<{ id: string; packages: number }>>([]);
@@ -63,53 +66,42 @@ export default function Vuelos() {
     fileInputRef.current?.click();
   };
 
-const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  try {
-    setIsUploading(true);   // botón “Cargando vuelos…”
-    setLoading(true);       // si quieres usar tu spinner general
-    setError(null);
+    try {
+      setIsUploading(true);
+      setLoading(true);
+      setError(null);
 
-    const result = await uploadVuelosFile(file);
+      const result = await uploadVuelosFile(file);
+      const registros = result.registrosCargados ?? 0;
 
-    const registros = result.registrosCargados ?? 0;
+      window.alert(
+        `${result.mensaje ?? 'Carga de vuelos completada'}.\nVuelos cargados: ${registros}.`
+      );
 
-    // Mensaje emergente simple
-    window.alert(
-      `${result.mensaje ?? 'Carga de vuelos completada'}.\nVuelos cargados: ${registros}.`
-    );
+      await fetchFlights(true);
+    } catch (err: any) {
+      console.error('Error subiendo archivo de vuelos:', err);
+      setError(err.message || 'Error al subir archivo de vuelos');
+      window.alert('Ocurrió un error al subir el archivo de vuelos.');
+    } finally {
+      setIsUploading(false);
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
 
-    // Recargar la tabla de vuelos
-    await fetchFlights(true);
-  } catch (err: any) {
-    console.error('Error subiendo archivo de vuelos:', err);
-    setError(err.message || 'Error al subir archivo de vuelos');
-    window.alert('Ocurrió un error al subir el archivo de vuelos.');
-  } finally {
-    setIsUploading(false);
-    setLoading(false);
-    // Permitir volver a seleccionar el mismo archivo
-    e.target.value = '';
-  }
-};
-
-
-
-
-
-  // Cargar vuelos activos desde operaciones
   const fetchFlights = async (manual = false) => {
     if (manual) {
-      // en refresco manual mostrar spinner rápido
       setLoading(true);
       cacheService.invalidate('operaciones-status');
     }
     try {
       setError(null);
       
-      // Usar caché con TTL de 30 segundos
       const status = await cacheService.getOrFetch(
         'operaciones-status',
         () => getOperacionesStatus(),
@@ -141,7 +133,6 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
         };
       });
       
-      // Orden: activos primero por menor tiempo restante, luego el resto
       mapped.sort((a,b) => {
         const activeA = a.status === 'EN_VUELO';
         const activeB = b.status === 'EN_VUELO';
@@ -158,13 +149,11 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     }
   };
 
-  // Manejar apertura del modal de pedidos
   const handleVerPedidos = async (flight: VistaVuelo) => {
     setSelectedFlight(flight);
     setShowPedidosModal(true);
     setErrorPedidos(null);
     
-    // Preferir usar orders si están disponibles, sino orderIds
     if (flight.orders && flight.orders.length > 0) {
       setPedidosEnVuelo(flight.orders);
     } else if (flight.orderIds && flight.orderIds.length > 0) {
@@ -182,249 +171,298 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     setErrorPedidos(null);
   };
 
-  // Iniciar polling
   useEffect(() => {
-    fetchFlights();
-    pollingRef.current = window.setInterval(() => {
+    // Solo hacer polling si estamos en la pestaña de vuelos
+    if (activeTab === 'vuelos') {
       fetchFlights();
-    }, POLLING_INTERVAL);
+      pollingRef.current = window.setInterval(() => {
+        fetchFlights();
+      }, POLLING_INTERVAL);
+    }
+
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
     };
-  }, []);
+  }, [activeTab]); // ✅ Agregado activeTab como dependencia
 
-  // Efecto para aplicar filtro desde URL
-  useEffect(() => {
-    const vueloParam = searchParams.get('vuelo');
-    if (vueloParam && flights.length > 0) {
-      // Verificar que el vuelo exista en la lista
-      const vueloExiste = flights.some(f => f.flightCode === vueloParam);
-      if (vueloExiste) {
-        setFlightCodeFilter(vueloParam);
-        // También establecer el filtro de estado en "Activos" para mostrar el vuelo
-        setStatusFilter('Activos');
-      }
-    }
-  }, [searchParams, flights]);
+  const allDestinations = ['Todos', ...new Set(flights.map(f => f.destination))];
+  const allStatuses = ['Todos', ...new Set(flights.map(f => f.statusLabel))];
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'PROGRAMADO': return 'bg-yellow-100 text-yellow-800';
-      case 'EN_VUELO': return 'bg-blue-100 text-blue-800';
-      case 'ATERRIZADO': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getProgressColor = (status: string) => {
-    switch (status) {
-      case 'EN_VUELO': return 'bg-blue-500';
-      case 'ATERRIZADO': return 'bg-green-500';
-      case 'PROGRAMADO': return 'bg-yellow-400';
-      default: return 'bg-gray-300';
-    }
-  };
-
-  // Filtrar vuelos por estado, destino y código de vuelo
   const filteredFlights = flights.filter(f => {
-    const matchesStatus = statusFilter === 'Todos' || statusFilter === f.status ||
-      (statusFilter === 'Activos' && f.status === 'EN_VUELO');
-    const matchesDestination = destinationFilter === 'Todos' || f.destination === destinationFilter;
-    const matchesFlightCode = !flightCodeFilter || f.flightCode.includes(flightCodeFilter);
-    return matchesStatus && matchesDestination && matchesFlightCode;
+    const matchStatus = statusFilter === 'Todos' || f.statusLabel === statusFilter;
+    const matchDest = destinationFilter === 'Todos' || f.destination === destinationFilter;
+    const matchCode = !flightCodeFilter || f.flightCode.toLowerCase().includes(flightCodeFilter.toLowerCase());
+    return matchStatus && matchDest && matchCode;
   });
 
   const statusCounts = {
     activos: flights.filter(f => f.status === 'EN_VUELO').length,
     programados: flights.filter(f => f.status === 'PROGRAMADO').length,
-    aterrizados: flights.filter(f => f.status === 'ATERRIZADO').length
+    aterrizados: flights.filter(f => f.status === 'LANDED').length,
   };
 
-  const destinosUnicos = Array.from(new Set(flights.map(f => f.destination))).filter(Boolean);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'EN_VUELO':
+        return 'bg-blue-100 text-blue-800';
+      case 'PROGRAMADO':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'LANDED':
+        return 'bg-green-100 text-green-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getProgressColor = (status: string) => {
+    switch (status) {
+      case 'EN_VUELO':
+        return 'bg-gradient-to-r from-blue-500 to-blue-600';
+      case 'PROGRAMADO':
+        return 'bg-yellow-500';
+      case 'LANDED':
+        return 'bg-green-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-[#FF6600] text-white px-8 py-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Monitoreo en tiempo real</h1>
-          <p className="text-lg mt-1">Rastrea todos los paquetes activos y su estado actual</p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-8">
+      <div className="max-w-7xl mx-auto">
+        
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-2 flex items-center gap-3">
+            <Plane className="w-10 h-10 text-[#FF6600]" />
+            Gestión de Vuelos
+          </h1>
+          <p className="text-gray-600">Monitorea vuelos activos y gestiona cancelaciones</p>
         </div>
-        <div>
-          <button
-            onClick={handleUploadClick}
-            disabled={isUploading}
-            className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow 
-              ${isUploading 
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
-                : 'bg-white text-[#FF6600] hover:bg-gray-100'}`}
-          >
-            {!isUploading && <Upload className="w-4 h-4" />}
-            {isUploading ? 'Cargando vuelos…' : 'Cargar vuelos'}
-          </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,.txt "
-            onChange={handleFileChange}
-            className="hidden"
-          />
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-6">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Estado</label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-                >
-                  <option>Todos</option>
-                  <option>Activos</option>
-                  <option>PROGRAMADO</option>
-                  <option>EN_VUELO</option>
-                  <option>ATERRIZADO</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Destino</label>
-                <select
-                  value={destinationFilter}
-                  onChange={(e) => setDestinationFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-                >
-                  <option>Todos</option>
-                  {destinosUnicos.map(dest => (
-                    <option key={dest}>{dest}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">Código de vuelo</label>
-                <input
-                  type="text"
-                  value={flightCodeFilter}
-                  onChange={(e) => setFlightCodeFilter(e.target.value)}
-                  placeholder="Buscar por código..."
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600]"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg font-semibold">
-                {statusCounts.activos} En Vuelo
-              </div>
-              <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-semibold">
-                {statusCounts.programados} Programados
-              </div>
-              <div className="px-4 py-2 bg-green-100 text-green-800 rounded-lg font-semibold">
-                {statusCounts.aterrizados} Aterrizados
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
+        {/* ✅ NUEVO - Pestañas */}
+        <div className="mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="flex gap-4">
               <button
-                onClick={() => fetchFlights(true)}
-                className="px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center gap-2"
-                title="Refrescar ahora"
+                onClick={() => setActiveTab('vuelos')}
+                className={`px-6 py-3 font-semibold border-b-2 transition-all ${
+                  activeTab === 'vuelos'
+                    ? 'border-[#FF6600] text-[#FF6600]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
               >
-                <RefreshCcw className="w-4 h-4" />
-                Refrescar
+                <div className="flex items-center gap-2">
+                  <Plane className="w-5 h-5" />
+                  Vuelos Activos
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('cancelaciones')}
+                className={`px-6 py-3 font-semibold border-b-2 transition-all ${
+                  activeTab === 'cancelaciones'
+                    ? 'border-red-600 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  Cancelaciones
+                </div>
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        {/* ✅ NUEVO - Renderizado condicional según pestaña */}
+        {activeTab === 'cancelaciones' ? (
+          <Cancelaciones />
+        ) : (
+          <>
+            {/* Contenido original de vuelos */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800 mb-2">Cargar Vuelos</h2>
+                  <p className="text-sm text-gray-600">Sube un archivo con el formato de vuelos</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={handleUploadClick}
+                    disabled={isUploading}
+                    className="px-6 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] disabled:bg-gray-400 font-medium flex items-center gap-2 shadow-lg transition-all"
+                  >
+                    {isUploading ? (
+                      <>
+                        <RefreshCcw className="w-5 h-5 animate-spin" />
+                        Cargando vuelos...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5" />
+                        Subir archivo de vuelos
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-800 mb-4">Filtros</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+                    <select
+                      value={statusFilter}
+                      onChange={e => setStatusFilter(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                    >
+                      {allStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Destino</label>
+                    <select
+                      value={destinationFilter}
+                      onChange={e => setDestinationFilter(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                    >
+                      {allDestinations.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Código de vuelo</label>
+                    <input
+                      type="text"
+                      value={flightCodeFilter}
+                      onChange={e => setFlightCodeFilter(e.target.value)}
+                      placeholder="Ej: FL123"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6600] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg font-semibold">
+                    {statusCounts.activos} En Vuelo
+                  </div>
+                  <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-semibold">
+                    {statusCounts.programados} Programados
+                  </div>
+                  <div className="px-4 py-2 bg-green-100 text-green-800 rounded-lg font-semibold">
+                    {statusCounts.aterrizados} Aterrizados
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => fetchFlights(true)}
+                    className="px-4 py-2 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium flex items-center gap-2"
+                    title="Refrescar ahora"
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                    Refrescar
+                  </button>
+                </div>
+              </div>
+              {error && (
+                <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-lg flex justify-between items-center">
+                  <span>{error}</span>
+                  <button onClick={() => fetchFlights(true)} className="text-sm underline">Reintentar</button>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">ID</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Origen → Destino</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Paquetes</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Estado</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Progreso</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Tiempo restante</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {filteredFlights.map(f => (
+                      <tr key={f.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 font-semibold text-gray-800">{f.flightCode}</td>
+                        <td className="px-6 py-4 text-gray-700">{f.origin} → {f.destination}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <Plane className="w-4 h-4 text-gray-500" />
+                            <span className="text-gray-700">{f.packages} / {f.capacity}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(f.status)}`}>{f.statusLabel}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-32">
+                              <div className={`h-full rounded-full ${getProgressColor(f.status)}`} style={{ width: `${f.progressPercentage}%` }} />
+                            </div>
+                            <span className="text-sm text-gray-600">{f.progressPercentage.toFixed(4)}%</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-medium text-gray-700">{formatRemaining(f.remainingSeconds)}</td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => handleVerPedidos(f)}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                          >
+                            <Package className="w-4 h-4" />
+                            Ver pedidos
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!loading && !filteredFlights.length && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">No hay vuelos para los filtros seleccionados.</td>
+                      </tr>
+                    )}
+                    {loading && flights.length > 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-4 text-center text-xs text-gray-400">Actualizando...</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button className="px-8 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium shadow-lg flex items-center gap-2">
+                <Download className="w-5 h-5" />
+                Exportar CSV
               </button>
             </div>
-          </div>
-          {error && (
-            <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-lg flex justify-between items-center">
-              <span>{error}</span>
-              <button onClick={() => fetchFlights(true)} className="text-sm underline">Reintentar</button>
-            </div>
-          )}
-
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">ID</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Origen → Destino</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Paquetes</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Estado</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Progreso</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Tiempo restante</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredFlights.map(f => (
-                  <tr key={f.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-semibold text-gray-800">{f.flightCode}</td>
-                    <td className="px-6 py-4 text-gray-700">{f.origin} → {f.destination}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <Plane className="w-4 h-4 text-gray-500" />
-                        <span className="text-gray-700">{f.packages} / {f.capacity}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(f.status)}`}>{f.statusLabel}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 bg-gray-200 rounded-full h-2 w-32">
-                          <div className={`h-full rounded-full ${getProgressColor(f.status)}`} style={{ width: `${f.progressPercentage}%` }} />
-                        </div>
-                        <span className="text-sm text-gray-600">{f.progressPercentage.toFixed(4)}%</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-medium text-gray-700">{formatRemaining(f.remainingSeconds)}</td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => handleVerPedidos(f)}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                      >
-                        <Package className="w-4 h-4" />
-                        Ver pedidos
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {!loading && !filteredFlights.length && (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">No hay vuelos para los filtros seleccionados.</td>
-                  </tr>
-                )}
-                {loading && flights.length > 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-xs text-gray-400">Actualizando...</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3">
-          <button className="px-8 py-3 bg-[#FF6600] text-white rounded-lg hover:bg-[#e55d00] font-medium shadow-lg flex items-center gap-2">
-            <Download className="w-5 h-5" />
-            Exportar CSV
-          </button>
-        </div>
+          </>
+        )}
       </div>
 
       {/* Modal de pedidos */}
       {showPedidosModal && selectedFlight && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            {/* Header */}
             <div className="bg-[#FF6600] text-white px-6 py-4 flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold">Pedidos en vuelo</h2>
@@ -440,7 +478,6 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
               </button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 overflow-y-auto p-6">
               {errorPedidos ? (
                 <div className="bg-red-50 border-l-4 border-red-500 p-4">
@@ -494,7 +531,6 @@ const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
               )}
             </div>
 
-            {/* Footer */}
             <div className="bg-gray-50 px-6 py-4 border-t">
               <button
                 onClick={handleCloseModal}
