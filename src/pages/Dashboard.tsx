@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { BarChart3, Bell, Globe, Play, Square, Calendar, Search, X } from 'lucide-react';
 import { Marker } from 'react-map-gl';
 import MapboxMap from '../components/MapboxMap';
@@ -53,6 +53,9 @@ type Route = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const highlightedWarehouse = new URLSearchParams(location.search).get('codigo');
+  const highlightedFlight = new URLSearchParams(location.search).get('vuelo');
   
   // Estados de UI
   const [showStats, setShowStats] = useState(true);
@@ -60,6 +63,7 @@ export default function Dashboard() {
   const [showLegend, setShowLegend] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showStopModal, setShowStopModal] = useState(false);
 
   // Estados de búsqueda
   const [searchQuery, setSearchQuery] = useState('');
@@ -259,22 +263,61 @@ export default function Dashboard() {
   };
 
   /**
-   * Detiene las operaciones
+   * Abre el modal de confirmación para detener operaciones
    */
-  const handleDetenerOperaciones = async () => {
+  const handleDetenerOperaciones = () => {
+    setShowStopModal(true);
+  };
+
+  /**
+   * Detiene las operaciones SIN descargar reporte
+   */
+  const confirmarDetenerSinReporte = async () => {
     try {
       setDeteniendo(true);
+      setShowStopModal(false);
       
       await stopOperaciones();
       
-      // ✅ OPTIMIZADO: Invalidar caché para obtener datos frescos
       cacheService.invalidate('operaciones-status');
-      
-      // Actualizar el estado
       await loadInitialData();
       
     } catch (error: any) {
       console.error('Error al detener operaciones:', error);
+    } finally {
+      setDeteniendo(false);
+    }
+  };
+
+  /**
+   * Detiene las operaciones Y descarga el reporte
+   */
+  const confirmarDetenerConReporte = async () => {
+    try {
+      setDeteniendo(true);
+      setShowStopModal(false);
+      
+      // Primero descargar el reporte
+      const { descargarReporteCierre } = await import('../services/apiOperaciones');
+      await descargarReporteCierre();
+      
+      // Luego detener operaciones
+      await stopOperaciones();
+      
+      cacheService.invalidate('operaciones-status');
+      await loadInitialData();
+      
+    } catch (error: any) {
+      console.error('Error al detener operaciones con reporte:', error);
+      alert('Error al generar el reporte. Las operaciones se detendrán de todos modos.');
+      
+      try {
+        await stopOperaciones();
+        cacheService.invalidate('operaciones-status');
+        await loadInitialData();
+      } catch (e: any) {
+        console.error('Error al detener operaciones:', e);
+      }
     } finally {
       setDeteniendo(false);
     }
@@ -482,13 +525,46 @@ export default function Dashboard() {
       console.log(`   - Origen: "${v.origin}" (primer char: "${v.origin[0]}")`);
       console.log(`   - Destino: "${v.destination}"`);
       console.log(`   - Color asignado: ${color}`);
+      console.log(`   - Route coords:`, v.route);
+      console.log(`   - Route length:`, v.route?.length);
+      console.log(`   - Progress:`, v.progressPercentage);
+      
+      // Calcular progress y clampearlo entre 0 y 1
+      let progressValue = undefined;
+      if (typeof v.progressPercentage === 'number') {
+        // El backend puede enviar valores en diferentes rangos:
+        // - 0-1: Usar directamente
+        // - 0-100: Dividir entre 100
+        // - > 100: Bug del backend, clampear a 1
+        let rawProgress = v.progressPercentage;
+        
+        // Si es mayor a 100, es definitivamente un porcentaje mal calculado
+        if (rawProgress > 100) {
+          console.warn(`⚠️ Progress > 100 detectado (${rawProgress}), clampeando a 100`);
+          rawProgress = 100;
+        }
+        
+        // Si está entre 1-100, asumir que es porcentaje
+        if (rawProgress > 1) {
+          rawProgress = rawProgress / 100;
+        }
+        
+        // Clampear entre 0 y 1 por seguridad
+        progressValue = Math.max(0, Math.min(1, rawProgress));
+        console.log(`   - Progress calculado (0-1):`, progressValue);
+      }
+      
       return {
         id: v.id,
         coordinates: v.route,
         color: color,
-        progress: (typeof v.progressPercentage === 'number') ? Math.max(0, Math.min(1, v.progressPercentage / 100)) : undefined,
+        progress: progressValue,
       };
     }) || [];
+
+  // Log de TODAS las rutas generadas
+  console.log('📊 TOTAL RUTAS GENERADAS:', routesForMap.length);
+  console.log('📋 RUTAS COMPLETAS:', routesForMap);
 
   // Log resumen de todos los orígenes únicos
   if (operacionesData?.vuelosActivos && operacionesData.vuelosActivos.length > 0) {
@@ -747,6 +823,76 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Modal de Confirmación para Detener Operaciones */}
+      {showStopModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <Square className="w-8 h-8 text-red-600" />
+              <h2 className="text-2xl font-bold text-gray-800">Detener Operaciones</h2>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              Estás a punto de detener todas las operaciones del sistema. 
+              ¿Deseas generar un reporte con los pedidos y rutas antes de detener?
+            </p>
+
+            {/* Información del reporte */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+              <p className="text-sm text-amber-900 mb-2">
+                <strong>📊 El reporte incluirá:</strong>
+              </p>
+              <ul className="text-sm text-amber-800 list-disc list-inside space-y-1">
+                <li>Todos los pedidos registrados</li>
+                <li>Estado de cada pedido</li>
+                <li>Rutas asignadas con sus tramos</li>
+                <li>Vuelos programados (origen, destino, horarios)</li>
+              </ul>
+            </div>
+
+            {/* Botones */}
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={confirmarDetenerConReporte}
+                disabled={deteniendo}
+                className="w-full px-6 py-3 bg-[#FF6600] text-white rounded-lg font-semibold hover:bg-[#e55a00] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {deteniendo ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Generando reporte...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Descargar Reporte y Detener
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={confirmarDetenerSinReporte}
+                disabled={deteniendo}
+                className="w-full px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Square className="w-5 h-5" />
+                Detener Sin Reporte
+              </button>
+
+              <button
+                onClick={() => setShowStopModal(false)}
+                disabled={deteniendo}
+                className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-[#FF6600] text-white px-6 py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between">
       <div>
@@ -860,6 +1006,8 @@ export default function Dashboard() {
             <MapboxMap 
               warehouses={legend.warehouses ? warehousesForMap : []} 
               routes={legend.routes ? routesForMap : []}
+              highlightedWarehouse={highlightedWarehouse || undefined}
+              highlightedFlight={highlightedFlight || undefined}
               onWarehouseClick={handleWarehouseClick}
             >
               {/* AVIONES EN MOVIMIENTO */}
@@ -898,12 +1046,37 @@ export default function Dashboard() {
                         className="relative group cursor-pointer"
                         onClick={() => handlePlaneClick(vuelo.flightCode)}
                       >
+                        {/* ETIQUETA DESTACADA PARA VUELO SELECCIONADO */}
+                        {highlightedFlight === vuelo.flightCode && (
+                          <div 
+                            className="absolute -top-20 left-1/2 transform -translate-x-1/2 z-50"
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            <div className="flex flex-col items-center animate-bounce">
+                              <div className="bg-[#FF6600] text-white px-4 py-2 rounded-lg shadow-2xl font-bold text-base whitespace-nowrap mb-1 border-2 border-white">
+                                ✈️ {vuelo.flightCode}
+                              </div>
+                              <div 
+                                className="w-0 h-0" 
+                                style={{
+                                  borderLeft: '12px solid transparent',
+                                  borderRight: '12px solid transparent',
+                                  borderTop: '12px solid #FF6600'
+                                }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
+                        
                         {/* SVG del avión con rotación */}
                         <svg 
-                          width="28" 
-                          height="28" 
+                          width={highlightedFlight === vuelo.flightCode ? "42" : "28"} 
+                          height={highlightedFlight === vuelo.flightCode ? "42" : "28"} 
                           viewBox="0 0 24 24" 
-                          className="drop-shadow-lg"
+                          className={highlightedFlight === vuelo.flightCode ? "drop-shadow-2xl" : "drop-shadow-lg"}
+                          style={{ 
+                            filter: highlightedFlight === vuelo.flightCode ? 'drop-shadow(0 0 8px rgba(255, 102, 0, 0.8))' : 'none'
+                          }}
                         >
                           <path 
                             d="M12.382 5.304L10.096 7.59l.006.02L11.838 14a.908.908 0 01-.211.794l-.573.573a.339.339 0 01-.566-.08l-2.348-4.25-.745-.746-1.97 1.97a3.311 3.311 0 01-.75.504l.44 1.447a.875.875 0 01-.199.79l-.175.176a.477.477 0 01-.672 0l-1.04-1.039-.018-.02-.788-.786-.02-.02-1.038-1.039a.477.477 0 010-.672l.176-.176a.875.875 0 01.79-.197l1.447.438a3.322 3.322 0 01.504-.75l1.97-1.97-.746-.744-4.25-2.348a.339.339 0 01-.08-.566l.573-.573a.909.909 0 01.794-.211l6.39 1.736.02.006 2.286-2.286c.37-.372 1.621-1.02 1.993-.65.37.372-.279 1.622-.65 1.993z" 
@@ -919,16 +1092,20 @@ export default function Dashboard() {
                           <div className="text-center mt-1 border-t border-gray-600 pt-1">Progreso: {Math.round(vuelo.progressPercentage)}%</div>
                           <div className="text-center text-[10px]">Paquetes: {vuelo.packages}/{vuelo.capacity}{typeof pc.pct === 'number' ? ` (${pc.pct.toFixed(0)}%)` : ''}</div>
                           
-                          {/* Lista de pedidos en el vuelo - máximo 5 sin scroll */}
-                          {vuelo.orderIds && vuelo.orderIds.length > 0 && (
+                          {/* Lista de pedidos en el vuelo - máximo 5 con detalles */}
+                          {vuelo.orders && vuelo.orders.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-gray-600">
                               <div className="text-[10px] text-gray-400 mb-1 text-center">
-                                Pedidos ({Math.min(vuelo.orderIds.length, 5)}{vuelo.orderIds.length > 5 ? '+' : ''})
+                                Pedidos ({Math.min(vuelo.orders.length, 5)}{vuelo.orders.length > 5 ? '+' : ''})
                               </div>
                               <div className="space-y-0.5 text-[10px]">
-                                {vuelo.orderIds.slice(0, 5).map((orderId: string, idx: number) => (
-                                  <div key={idx} className="text-gray-300 font-mono text-center">
-                                    • {orderId}
+                                {vuelo.orders.slice(0, 5).map((order: any, idx: number) => (
+                                  <div key={idx} className="text-gray-300 text-left px-1">
+                                    <span className="font-mono">#{order.id}</span>
+                                    <span className="text-gray-400 mx-1">→</span>
+                                    <span>{order.destino || 'N/A'}</span>
+                                    <span className="text-gray-400 mx-1">•</span>
+                                    <span className="text-yellow-300">{order.cantidad}kg</span>
                                   </div>
                                 ))}
                               </div>

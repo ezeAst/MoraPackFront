@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, ChangeEvent  } from 'react';
-import { Plane, Download, RefreshCcw, Package, X, Upload, AlertTriangle } from 'lucide-react';
+import { Plane, Download, RefreshCcw, Package, X, Upload, AlertTriangle, MapPin } from 'lucide-react';
 import { getOperacionesStatus } from '../services/apiOperaciones';
 import { uploadVuelosFile } from '../services/apiVuelos';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { cacheService } from '../services/cacheService';
 import Cancelaciones from './Cancelaciones'; // ✅ NUEVO
 
@@ -29,7 +29,9 @@ interface VistaVuelo {
   orderIds?: string[];
   orders?: Array<{
     id: string;
-    packages: number;
+    packages?: number;
+    cantidad?: number;
+    destino?: string;
   }>;
 }
 
@@ -43,6 +45,7 @@ function formatRemaining(seconds: number): string {
 
 export default function Vuelos() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   
   // ✅ NUEVO - Estado para pestañas
   const [activeTab, setActiveTab] = useState<'vuelos' | 'cancelaciones'>('vuelos');
@@ -57,7 +60,7 @@ export default function Vuelos() {
 
   const [showPedidosModal, setShowPedidosModal] = useState(false);
   const [selectedFlight, setSelectedFlight] = useState<VistaVuelo | null>(null);
-  const [pedidosEnVuelo, setPedidosEnVuelo] = useState<Array<{ id: string; packages: number }>>([]);
+  const [pedidosEnVuelo, setPedidosEnVuelo] = useState<Array<{ id: string; packages?: number; cantidad?: number; destino?: string }>>([]);
   const [errorPedidos, setErrorPedidos] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -147,6 +150,12 @@ export default function Vuelos() {
     } finally {
       setLoading(false);
     }
+  };
+
+
+  const handleVerEnMapa = (flight: VistaVuelo) => {
+    // Navegar al dashboard con el código de vuelo como parámetro
+    navigate(`/?vuelo=${flight.flightCode}`);
   };
 
   const handleVerPedidos = async (flight: VistaVuelo) => {
@@ -424,13 +433,22 @@ export default function Vuelos() {
                         </td>
                         <td className="px-6 py-4 font-medium text-gray-700">{formatRemaining(f.remainingSeconds)}</td>
                         <td className="px-6 py-4">
-                          <button
-                            onClick={() => handleVerPedidos(f)}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                          >
-                            <Package className="w-4 h-4" />
-                            Ver pedidos
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleVerPedidos(f)}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                            >
+                              <Package className="w-4 h-4" />
+                              Ver pedidos
+                            </button>
+                            <button
+                              onClick={() => handleVerEnMapa(f)}
+                              className="px-3 py-1.5 bg-[#FF6600] hover:bg-[#e55a00] text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                            >
+                              <MapPin className="w-4 h-4" />
+                              Ver en mapa
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -491,43 +509,53 @@ export default function Vuelos() {
                   <p className="text-gray-500 text-lg">No hay pedidos en este vuelo</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="mb-6 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">
-                        Total de pedidos: <span className="font-semibold text-gray-800">{pedidosEnVuelo.length}</span>
-                      </p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Carga: <span className="font-semibold text-gray-800">{selectedFlight.packages}/{selectedFlight.capacity}</span>
-                      </p>
+                <>
+                  <div className="space-y-4">
+                    <div className="mb-6 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">
+                          Total de pedidos: <span className="font-semibold text-gray-800">{pedidosEnVuelo.length}</span>
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Carga: <span className="font-semibold text-gray-800">{selectedFlight.packages}/{selectedFlight.capacity}</span>
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">
+                          Progreso: <span className="font-semibold text-gray-800">{selectedFlight.progressPercentage.toFixed(4)}%</span>
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Salida: <span className="font-semibold text-gray-800">{selectedFlight.departureTime}</span>
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600">
-                        Progreso: <span className="font-semibold text-gray-800">{selectedFlight.progressPercentage.toFixed(4)}%</span>
-                      </p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Salida: <span className="font-semibold text-gray-800">{selectedFlight.departureTime}</span>
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-100 border-b-2 border-gray-300">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Código de Pedido</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {pedidosEnVuelo.map((pedido) => (
-                          <tr key={pedido.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 font-mono font-semibold text-gray-800">{pedido.id}</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-100 border-b-2 border-gray-300">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Código de Pedido</th>
+                            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Destino Final</th>
+                            <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">Cantidad (kg)</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {pedidosEnVuelo.map((pedido) => (
+                            <tr key={pedido.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 font-mono font-semibold text-gray-800">{pedido.id}</td>
+                              <td className="px-6 py-4 text-gray-700">
+                                {pedido.destino || '-'}
+                              </td>
+                              <td className="px-6 py-4 text-right font-medium text-gray-800">
+                                {pedido.cantidad || pedido.packages || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
 

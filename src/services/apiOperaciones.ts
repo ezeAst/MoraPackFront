@@ -2,8 +2,8 @@
 import type { OperacionesStatus } from '../types/operaciones';
 
 // Base URL del backend - usa variable de entorno o fallback a localhost
-//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-const API_BASE_URL = "http://localhost:8080/api"
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+//const API_BASE_URL = "http://localhost:8080/api"
 
 // ==================== TIPOS ADICIONALES ====================
 
@@ -267,4 +267,42 @@ export async function getAlmacenesOnly(): Promise<Aeropuerto[]> {
   }
   
   return response.json();
+}
+/**
+ * ✅ NUEVO: Descarga el reporte de cierre de operaciones
+ * Genera un CSV con todos los pedidos y sus rutas asignadas
+ * 
+ * @returns void - Descarga automáticamente el archivo
+ * @throws Error si la petición falla
+ */
+export async function descargarReporteCierre(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/operaciones/reporte-cierre`, {
+    headers: {
+      'Accept': 'text/csv',
+    },
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Error al generar reporte: ${response.status} ${response.statusText}`);
+  }
+  
+  // Obtener el blob del CSV
+  const blob = await response.blob();
+  
+  // Crear un enlace temporal para descargar
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  
+  // Generar nombre del archivo con timestamp
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  link.download = `reporte_cierre_${timestamp}.csv`;
+  
+  // Trigger descarga
+  document.body.appendChild(link);
+  link.click();
+  
+  // Cleanup
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
 }
