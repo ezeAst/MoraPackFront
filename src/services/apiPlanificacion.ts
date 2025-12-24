@@ -1,7 +1,7 @@
 // src/services/apiPlanificacion.ts
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-//const API_BASE_URL = "http://localhost:8080/api"
+//const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = "http://localhost:8080/api"
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);

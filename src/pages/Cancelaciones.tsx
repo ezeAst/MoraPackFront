@@ -17,7 +17,7 @@ import {
   limpiarCancelacionesAntiguas,
   VueloCancelado,
   VueloCancelacionResponse
-} from '../services/apicancelaciones';
+} from '../services/apiCancelaciones';
 
 export default function Cancelaciones() {
   // Estados principales
