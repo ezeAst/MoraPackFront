@@ -7,6 +7,8 @@ import Vuelos from './pages/Vuelos';
 import Planificacion from './pages/Planificacion';
 import Simulacion from './pages/Simulacion';
 import { SimulationProvider } from './contexts/SimulationContext';
+import React from 'react';
+import { ColapsoLogisticoGlobal } from './components/ColapsoLogisticoGlobal';
 
 // Componente interno que maneja la sincronización entre rutas y tabs
 function AppContent() {
@@ -53,11 +55,16 @@ function AppContent() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <SimulationProvider>
-        <AppContent />
-      </SimulationProvider>
-    </BrowserRouter>
+    <>
+      <BrowserRouter>
+        <SimulationProvider>
+          <AppContent />
+        </SimulationProvider>
+      </BrowserRouter>
+
+      {/* Componente global para colapso logístico */}
+      <ColapsoLogisticoGlobal />
+    </>
   );
 }
 

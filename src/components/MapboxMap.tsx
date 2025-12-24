@@ -243,26 +243,6 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
               style={{ cursor: 'pointer', position: 'relative' }}
             >
               {/* ETIQUETA DESTACADA ANIMADA */}
-              {highlighted && (
-                <div 
-                  className="absolute -top-20 left-1/2 transform -translate-x-1/2 z-50"
-                  style={{ pointerEvents: 'none' }}
-                >
-                  <div className="flex flex-col items-center animate-bounce">
-                    <div className="bg-[#FF6600] text-white px-4 py-2 rounded-lg shadow-2xl font-bold text-base whitespace-nowrap mb-1 border-2 border-white">
-                      📍 {warehouse.name}
-                    </div>
-                    <div 
-                      className="w-0 h-0" 
-                      style={{
-                        borderLeft: '12px solid transparent',
-                        borderRight: '12px solid transparent',
-                        borderTop: '12px solid #FF6600'
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              )}
               
               {warehouseIconCities.includes(warehouse.name) ? (
                 <svg
@@ -449,6 +429,33 @@ export default function MapboxMap({ warehouses, routes = [], children, onMapLoad
           </Marker>
         );
       })}
+
+      {warehouses.flatMap((warehouse) =>
+        (warehouse.outgoingFlights ?? [])
+          .filter(flight => flight.status === 'in_flight')
+          .map((flight) => (
+            <Marker
+              key={`flight-${flight.id}`}
+              longitude={warehouse.lng}
+              latitude={warehouse.lat}
+              anchor="bottom"
+            >
+              <div
+                title={`Vuelo ${flight.flightCode} hacia ${flight.destination}`}
+                style={{
+                  transform: highlightedFlight === flight.id ? 'scale(1.4)' : 'scale(1)',
+                  transition: 'transform 0.2s',
+                  zIndex: highlightedFlight === flight.id ? 100 : 1,
+                }}
+              >
+                {/* Puedes cambiar este SVG por otro icono de avión si lo prefieres */}
+                <svg width="28" height="28" viewBox="0 0 24 24" fill={highlightedFlight === flight.id ? "#2563eb" : "#FF6600"}>
+                  <path d="M2.5 19.5l19-7-19-7v6l15 1-15 1z"/>
+                </svg>
+              </div>
+            </Marker>
+          ))
+      )}
 
       {children}
     </Map>

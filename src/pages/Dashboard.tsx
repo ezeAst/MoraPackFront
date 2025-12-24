@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect,useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { BarChart3, Bell, Globe, Play, Square, Calendar, Search, X } from 'lucide-react';
 import { Marker } from 'react-map-gl';
@@ -51,6 +51,89 @@ type Route = {
   progress?: number; // 0..1
 };
 
+// Hook para detectar colapso logístico
+function useColapsoLogistico(pedidos: any[]) {
+  const [showColapso, setShowColapso] = useState(false);
+  const [pedidosColapso, setPedidosColapso] = useState<any[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Guardar timestamps de cuando un pedido entra en NO_ASIGNADO
+  useEffect(() => {
+    const now = Date.now();
+    const noAsignados = pedidos.filter(p => p.estado === 'NO_ASIGNADO');
+    let changed = false;
+
+    const timestamps: Record<string, number> = JSON.parse(localStorage.getItem('noAsignadosTimestamps') || '{}');
+    
+    noAsignados.forEach(p => {
+      if (!timestamps[p.id]) {
+        timestamps[p.id] = now;
+        changed = true;
+      }
+    });
+
+    Object.keys(timestamps).forEach(id => {
+      if (!noAsignados.find(p => String(p.id) === id)) {
+        delete timestamps[id];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      localStorage.setItem('noAsignadosTimestamps', JSON.stringify(timestamps));
+    }
+  }, [pedidos]);
+
+  // Chequear colapso logístico cada 10 segundos
+  useEffect(() => {
+    function checkColapso() {
+      const now = Date.now();
+      const timestamps: Record<string, number> = JSON.parse(localStorage.getItem('noAsignadosTimestamps') || '{}');
+      
+      const LIMITE_MS = 5 * 60 * 1000; // 1 minuto
+      
+      const colapsados = pedidos.filter(p => {
+        if (p.estado !== 'NO_ASIGNADO') return false;
+        const timestamp = timestamps[p.id];
+        if (!timestamp) return false;
+        
+        const tiempoTranscurrido = now - timestamp;
+        return tiempoTranscurrido > LIMITE_MS;
+      });
+
+      if (colapsados.length > 0) {
+        setShowColapso(true);
+        setPedidosColapso(colapsados);
+        
+        localStorage.setItem('pedidosColapso', JSON.stringify(colapsados.map(p => ({
+          id: p.id,
+          destino: p.destino,
+          cantidad: p.cantidad,
+        }))));
+        
+        localStorage.setItem('colapsoLogistico', JSON.stringify({ ts: now }));
+      } else {
+        setShowColapso(false);
+        setPedidosColapso([]);
+        localStorage.removeItem('pedidosColapso');
+      }
+    }
+
+    checkColapso();
+    timerRef.current = setInterval(checkColapso, 10000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [pedidos]);
+
+  function cerrarColapso() {
+    setShowColapso(false);
+  }
+
+  return { showColapso, pedidosColapso, cerrarColapso };
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -99,6 +182,31 @@ export default function Dashboard() {
   // Estado para el reloj en tiempo real
   const [tiempoActual, setTiempoActual] = useState<string>('');
   const [tiempoTranscurrido, setTiempoTranscurrido] = useState<string>('0d 0h 0m');
+  
+// Cargar pedidos para monitoreo de colapso
+const [pedidosMonitoreo, setPedidosMonitoreo] = useState<any[]>([]);
+
+useEffect(() => {
+  async function cargarPedidos() {
+    try {
+      // Importar el servicio de API de planificación
+      const { getPedidos } = await import('../services/apiPlanificacion');
+      const pedidos = await getPedidos();
+      setPedidosMonitoreo(pedidos || []);
+    } catch (error) {
+      console.error('Error cargando pedidos para monitoreo:', error);
+    }
+  }
+  
+  // Cargar inicialmente
+  cargarPedidos();
+  
+  // Recargar cada 30 segundos
+  const interval = setInterval(cargarPedidos, 30000);
+  return () => clearInterval(interval);
+}, []);
+
+useColapsoLogistico(pedidosMonitoreo);
 
   // ==================== CARGA INICIAL ====================
   useEffect(() => {

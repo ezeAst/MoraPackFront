@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Package, X, MapPin, Calendar, User, AlertCircle, RefreshCw, Truck, Plane, Clock, ArrowRight, Navigation } from 'lucide-react';
 import {
   getResumenEstado,
@@ -15,6 +15,107 @@ import { cacheService } from '../services/cacheService';
 
 interface PedidoConDetalle extends PedidoResumen {
   asignacion?: AsignacionPedido;
+}
+
+// Añade este hook para manejar el tiempo de los pedidos no asignados
+function useColapsoLogistico(pedidos: PedidoConDetalle[]) {
+  const [showColapso, setShowColapso] = useState(false);
+  const [pedidosColapso, setPedidosColapso] = useState<PedidoConDetalle[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Guardar timestamps de cuando un pedido entra en NO_ASIGNADO
+  useEffect(() => {
+    const now = Date.now();
+    const noAsignados = pedidos.filter(p => p.estado === 'NO_ASIGNADO');
+    let changed = false;
+
+    // Guardar o actualizar timestamps en localStorage
+    const timestamps: Record<string, number> = JSON.parse(localStorage.getItem('noAsignadosTimestamps') || '{}');
+    
+    noAsignados.forEach(p => {
+      if (!timestamps[p.id]) {
+        timestamps[p.id] = now;
+        changed = true;
+        console.log(`⏰ Iniciando timer para pedido #${p.id}`);
+      }
+    });
+
+    // Limpiar los que ya no están en NO_ASIGNADO
+    Object.keys(timestamps).forEach(id => {
+      if (!noAsignados.find(p => String(p.id) === id)) {
+        console.log(`✅ Pedido #${id} ya no está en NO_ASIGNADO, limpiando timer`);
+        delete timestamps[id];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      localStorage.setItem('noAsignadosTimestamps', JSON.stringify(timestamps));
+    }
+  }, [pedidos]);
+
+  // Chequear colapso logístico cada 10 segundos
+  useEffect(() => {
+    function checkColapso() {
+      const now = Date.now();
+      const timestamps: Record<string, number> = JSON.parse(localStorage.getItem('noAsignadosTimestamps') || '{}');
+      
+      // Verificar pedidos que superan 1 minuto (60000 ms)
+      const LIMITE_MS = 5 * 60 * 1000; // 1 minuto
+      
+      const colapsados = pedidos.filter(p => {
+        if (p.estado !== 'NO_ASIGNADO') return false;
+        const timestamp = timestamps[p.id];
+        if (!timestamp) return false;
+        
+        const tiempoTranscurrido = now - timestamp;
+        const segundos = Math.floor(tiempoTranscurrido / 1000);
+        
+        if (tiempoTranscurrido > LIMITE_MS) {
+          console.log(`🚨 COLAPSO: Pedido #${p.id} lleva ${segundos} segundos sin asignar`);
+          return true;
+        }
+        
+        return false;
+      });
+
+      if (colapsados.length > 0) {
+        console.log(`⚠️ ALERTA: ${colapsados.length} pedidos en colapso logístico`);
+        setShowColapso(true);
+        setPedidosColapso(colapsados);
+        
+        // Guardar pedidos colapsados en localStorage para el componente global
+        localStorage.setItem('pedidosColapso', JSON.stringify(colapsados.map(p => ({
+          id: p.id,
+          destino: p.destino,
+          cantidad: p.cantidad,
+        }))));
+        
+        // Notificar a otras pestañas
+        localStorage.setItem('colapsoLogistico', JSON.stringify({ ts: now }));
+      } else {
+        setShowColapso(false);
+        setPedidosColapso([]);
+        localStorage.removeItem('pedidosColapso');
+      }
+    }
+
+    // Ejecutar inmediatamente
+    checkColapso();
+    
+    // Y luego cada 10 segundos
+    timerRef.current = setInterval(checkColapso, 10000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [pedidos]);
+
+  function cerrarColapso() {
+    setShowColapso(false);
+  }
+
+  return { showColapso, pedidosColapso, cerrarColapso };
 }
 
 export default function Planificacion() {
@@ -34,6 +135,12 @@ export default function Planificacion() {
   const [selectedPedido, setSelectedPedido] = useState<PedidoConDetalle | null>(null);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [errorDetalle, setErrorDetalle] = useState<string | null>(null);
+  const { showColapso, pedidosColapso, cerrarColapso } = useColapsoLogistico(pedidos);
+
+  // 👇 ESTA LÍNEA DEBE ESTAR AQUÍ
+  useColapsoLogistico(pedidos);
+
+  
 
   // Cargar datos iniciales
   useEffect(() => {
